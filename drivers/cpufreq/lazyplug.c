@@ -4,7 +4,7 @@
  *
  * Copyright 2012~2014 Paul Reioux
  * Copyright 2015 Park Ju Hyung
- *
+ * Copyright 2017 Sekil
  *
  ** Introduction
  *
