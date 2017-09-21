@@ -1,5 +1,5 @@
-# Nougat TouchWiz kernel for a3xelte
-## Warning: this is for Nougat stock and based on TouchWiz custom ROMs only
+# Nougat AOSP kernel for a3xeltexx
+# Modified by @alexax66 and @sekil
 How to build this kernel?
 
 1. Download this toolchain: `aarch64-cortex_a53-linux-gnueabi` here: https://www.androidfilehost.com/?fid=457095661767130542 and extract it
