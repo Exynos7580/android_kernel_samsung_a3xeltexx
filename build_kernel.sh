@@ -27,7 +27,7 @@ if [ ! -d $(pwd)/output ];
         mkdir $(pwd)/output;
     fi
 
-make -C $(pwd) O=output ARCH=arm64 "alexax_"$VARIANT"_defconfig"
+make -C $(pwd) O=output ARCH=arm64 "lineageos_"$VARIANT"_defconfig"
 
 #make -C $(pwd) O=output ARCH=arm64 alexax_a3xelte_defconfig
 
