@@ -600,8 +600,6 @@ struct ist30xx_data {
 	struct notifier_block vbus_nb;
 #endif
 	int lcd_id;
-	bool dt2w_enable;
-	u32 dt2w_count;
 
 };
 

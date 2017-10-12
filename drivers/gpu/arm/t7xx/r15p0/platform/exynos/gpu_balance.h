@@ -98,7 +98,7 @@ inline bool mali_wait_reg(struct kbase_device *kbdev, u32 reg, u32 val, u16 time
 			dev_dbg(kbdev->dev, "mali wait reg timeout\n");
 			break;
 		}
-		udelay(10);
+		//udelay(10);
 		count++;
 	} while(1);
 

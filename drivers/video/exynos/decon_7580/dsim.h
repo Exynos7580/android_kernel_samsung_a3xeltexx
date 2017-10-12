@@ -146,6 +146,7 @@ struct mipi_dsim_lcd_driver {
 	int	(*suspend)(struct dsim_device *dsim);
 	int	(*displayon)(struct dsim_device *dsim);
 	int	(*resume)(struct dsim_device *dsim);
+	int	(*testvsync) (struct dsim_device *dsim);
 	int	(*display_lvds_init)(struct dsim_device *dsim);
 };
 

@@ -1015,13 +1015,9 @@ radix_tree_gang_lookup(struct radix_tree_root *root, void **results,
 		return 0;
 
 	radix_tree_for_each_slot(slot, root, &iter, first_index) {
-		results[ret] = rcu_dereference_raw(*slot);
+		results[ret] = indirect_to_ptr(rcu_dereference_raw(*slot));
 		if (!results[ret])
 			continue;
-		if (radix_tree_is_indirect_ptr(results[ret])) {
-			slot = radix_tree_iter_retry(&iter);
-			continue;
-		}
 		if (++ret == max_items)
 			break;
 	}
@@ -1098,13 +1094,9 @@ radix_tree_gang_lookup_tag(struct radix_tree_root *root, void **results,
 		return 0;
 
 	radix_tree_for_each_tagged(slot, root, &iter, first_index, tag) {
-		results[ret] = rcu_dereference_raw(*slot);
+		results[ret] = indirect_to_ptr(rcu_dereference_raw(*slot));
 		if (!results[ret])
 			continue;
-		if (radix_tree_is_indirect_ptr(results[ret])) {
-			slot = radix_tree_iter_retry(&iter);
-			continue;
-		}
 		if (++ret == max_items)
 			break;
 	}
@@ -1306,18 +1298,15 @@ static inline void radix_tree_shrink(struct radix_tree_root *root)
 }
 
 /**
- *	radix_tree_delete_item    -    delete an item from a radix tree
+ *	radix_tree_delete    -    delete an item from a radix tree
  *	@root:		radix tree root
  *	@index:		index key
- *	@item:		expected item
  *
- *	Remove @item at @index from the radix tree rooted at @root.
+ *	Remove the item at @index from the radix tree rooted at @root.
  *
- *	Returns the address of the deleted item, or NULL if it was not present
- *	or the entry at the given @index was not @item.
+ *	Returns the address of the deleted item, or NULL if it was not present.
  */
-void *radix_tree_delete_item(struct radix_tree_root *root,
-			     unsigned long index, void *item)
+void *radix_tree_delete(struct radix_tree_root *root, unsigned long index)
 {
 	struct radix_tree_node *node = NULL;
 	struct radix_tree_node *slot = NULL;
@@ -1351,11 +1340,6 @@ void *radix_tree_delete_item(struct radix_tree_root *root,
 
 	if (slot == NULL)
 		goto out;
-
-	if (item && slot != item) {
-		slot = NULL;
-		goto out;
-	}
 
 	/*
 	 * Clear all tags associated with the item to be deleted.
@@ -1400,21 +1384,6 @@ void *radix_tree_delete_item(struct radix_tree_root *root,
 
 out:
 	return slot;
-}
-EXPORT_SYMBOL(radix_tree_delete_item);
-
-/**
- *	radix_tree_delete    -    delete an item from a radix tree
- *	@root:		radix tree root
- *	@index:		index key
- *
- *	Remove the item at @index from the radix tree rooted at @root.
- *
- *	Returns the address of the deleted item, or NULL if it was not present.
- */
-void *radix_tree_delete(struct radix_tree_root *root, unsigned long index)
-{
-	return radix_tree_delete_item(root, index, NULL);
 }
 EXPORT_SYMBOL(radix_tree_delete);
 

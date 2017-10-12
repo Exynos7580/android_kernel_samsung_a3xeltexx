@@ -451,12 +451,7 @@ int ist30xx_internal_suspend(struct ist30xx_data *data)
         ist30xx_power_off(data);
     }
 #else
-    if (!data->dt2w_enable)
-        ist30xx_power_off(data);
-	else {
-        ist30xx_reset(data, false);
-        ist30xx_cmd_gesture(data->client, 3);
-	}
+	ist30xx_power_off(data);
 #endif
 	return 0;
 }
@@ -470,10 +465,7 @@ int ist30xx_internal_resume(struct ist30xx_data *data)
     else
         ist30xx_power_on(data, false);
 #else
-    if (!data->dt2w_enable)
-		ist30xx_power_on(data, false);
-	else
-		ist30xx_reset(data, false);
+	ist30xx_power_on(data, false);
 #endif
 
 	return 0;

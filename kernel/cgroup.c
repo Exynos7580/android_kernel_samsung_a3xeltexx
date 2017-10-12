@@ -2192,11 +2192,6 @@ retry_find_task:
 				rcu_read_unlock();
 				goto out_unlock_cgroup;
 			}
-
-
-
-
-
 		}
 	} else
 		tsk = current;

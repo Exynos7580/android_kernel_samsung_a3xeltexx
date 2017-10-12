@@ -1124,14 +1124,14 @@
 			"d_pclk_disp", "pclk_decon0", "mif_pll";
 
 		ip_ver = <4>;
-		max_win = <8>;
-		n_sink_pad = <7>;
+		max_win = <6>;
+		n_sink_pad = <3>;
 		n_src_pad = <1>;
 		default_win = <0>;
-                psr_mode = <2>;
 		trig_mode = <0>;	/* 0: hw trigger, 1: sw trigger */
 		dsi_mode = <0>;		/* 0: single dsi, 1: dual dsi */
 
+		status = "disabled";
 
 		#address-cells = <2>;
 		#size-cells = <2>;

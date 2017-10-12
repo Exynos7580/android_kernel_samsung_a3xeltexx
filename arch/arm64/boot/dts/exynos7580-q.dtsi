@@ -1029,24 +1029,15 @@
 			/* pclk: bus clock, aclk: DMA operation clock and SFR access */
 			"d_pclk_disp", "pclk_decon0", "mif_pll";
 
-		ip_ver = <4>;
-		max_win = <8>;
+		ip_ver = <2>;
+		max_win = <7>;
 		n_sink_pad = <7>;
 		n_src_pad = <1>;
 		default_win = <0>;
-		psr_mode = <2>;		/* 0: video mode, 1: DP command mode, 2: MIPI command mode */
 		trig_mode = <0>;	/* 0: hw trigger, 1: sw trigger */
 		dsi_mode = <0>;		/* 0: single dsi, 1: dual dsi */
+		psr_mode = <2>;		/* 0: video mode, 1: DP command mode, 2: MIPI command mode */
 
-
-		#address-cells = <2>;
-		#size-cells = <2>;
-		ranges;
-
-		cam-stat {
-			/* ISP_STATUS register */
-			reg = <0x0 0x10464144 0x0 0x4>;
-		};
 
 	};
 

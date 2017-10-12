@@ -1048,7 +1048,7 @@ static int ext2_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount2;
 	}
 	sbi->s_gdb_count = db_count;
-	erandom_get_random_bytes((char *)&sbi->s_next_generation, sizeof(u32));
+	get_random_bytes(&sbi->s_next_generation, sizeof(u32));
 	spin_lock_init(&sbi->s_next_gen_lock);
 
 	/* per fileystem reservation list head & lock */
@@ -1493,7 +1493,6 @@ static ssize_t ext2_quota_write(struct super_block *sb, int type,
 				sb->s_blocksize - offset : towrite;
 
 		tmp_bh.b_state = 0;
-		tmp_bh.b_size = sb->s_blocksize;
 		err = ext2_get_block(inode, blk, &tmp_bh, 1);
 		if (err < 0)
 			goto out;

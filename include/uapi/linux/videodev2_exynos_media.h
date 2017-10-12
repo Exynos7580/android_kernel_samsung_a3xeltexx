@@ -15,9 +15,6 @@
 #ifndef __LINUX_VIDEODEV2_EXYNOS_MEDIA_H
 #define __LINUX_VIDEODEV2_EXYNOS_MEDIA_H
 
-//#include <linux/videodev2.h>
-//#include <linux/exynos_mfc_media.h>
-
 /*      Pixel format          FOURCC                     depth  Description  */
 
 /* RGB formats */

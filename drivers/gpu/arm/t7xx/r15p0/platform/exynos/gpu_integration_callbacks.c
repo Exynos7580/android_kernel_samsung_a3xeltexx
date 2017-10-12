@@ -54,10 +54,6 @@
 extern int sec_therm_get_ap_temperature(void);
 #endif
 
-#ifdef CONFIG_SCHED_HMP
-extern int set_hmp_boost(int enable);
-#endif
-
 #ifdef CONFIG_USE_VSYNC_SKIP
 void decon_extra_vsync_wait_set(int);
 void decon_extra_vsync_wait_add(int);
@@ -154,11 +150,6 @@ void gpu_destroy_context(void *ctx)
 #ifdef CONFIG_MALI_DVFS
 		gpu_dvfs_boost_lock(GPU_DVFS_BOOST_UNSET);
 #endif
-#ifdef CONFIG_SCHED_HMP
-		set_hmp_boost(0);
-		set_hmp_aggressive_up_migration(false);
-		set_hmp_aggressive_yield(false);
-#endif
 	}
 }
 
@@ -240,11 +231,6 @@ int gpu_vendor_dispatch(struct kbase_context *kctx, void * const args, u32 args_
 #endif /* CONFIG_MALI_DVFS */
 			if (!kctx->ctx_need_qos) {
 				kctx->ctx_need_qos = true;
-#ifdef CONFIG_SCHED_HMP
-				set_hmp_boost(1);
-				set_hmp_aggressive_up_migration(true);
-				set_hmp_aggressive_yield(true);
-#endif
 			}
 #ifdef CONFIG_MALI_DVFS
 			if (kgp->padding) {
@@ -266,11 +252,6 @@ int gpu_vendor_dispatch(struct kbase_context *kctx, void * const args, u32 args_
 #endif /* CONFIG_MALI_DVFS */
 			if (kctx->ctx_need_qos) {
 				kctx->ctx_need_qos = false;
-#ifdef CONFIG_SCHED_HMP
-				set_hmp_boost(0);
-				set_hmp_aggressive_up_migration(false);
-				set_hmp_aggressive_yield(false);
-#endif /* CONFIG_SCHED_HMP */
 #ifdef CONFIG_MALI_DVFS
 				if (kgp->padding) {
 					struct exynos_context *platform;

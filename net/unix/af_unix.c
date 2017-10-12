@@ -2099,7 +2099,14 @@ static int unix_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
 		memset(&tmp_scm, 0, sizeof(tmp_scm));
 	}
 
-	mutex_lock(&u->readlock);
+	err = mutex_lock_interruptible(&u->readlock);
+	if (unlikely(err)) {
+		/* recvmsg() in non blocking mode is supposed to return -EAGAIN
+		 * sk_rcvtimeo is not honored by mutex_lock_interruptible()
+		 */
+		err = noblock ? -EAGAIN : -ERESTARTSYS;
+		goto out;
+	}
 
 	do {
 		int chunk;
@@ -2131,12 +2138,12 @@ again:
 
 			timeo = unix_stream_data_wait(sk, timeo, last);
 
-			if (signal_pending(current)) {
+			if (signal_pending(current)
+			    ||  mutex_lock_interruptible(&u->readlock)) {
 				err = sock_intr_errno(timeo);
 				goto out;
 			}
 
-			mutex_lock(&u->readlock);
 			continue;
  unlock:
 			unix_state_unlock(sk);
@@ -2205,20 +2212,8 @@ again:
 			if (UNIXCB(skb).fp)
 				siocb->scm->fp = scm_fp_dup(UNIXCB(skb).fp);
 
-			if (skip) {
-				sk_peek_offset_fwd(sk, chunk);
-				skip -= chunk;
-			}
+			sk_peek_offset_fwd(sk, chunk);
 
-			if (UNIXCB(skb).fp)
-				break;
-
-			last = skb;
-			unix_state_lock(sk);
-			skb = skb_peek_next(skb, &sk->sk_receive_queue);
-			if (skb)
-				goto again;
-			unix_state_unlock(sk);
 			break;
 		}
 	} while (size);
