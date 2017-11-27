@@ -206,7 +206,6 @@ void *vb2_ion_private_alloc(void *alloc_ctx, size_t size, int write, int plane)
 			(ion_flag(ctx->flags) & VB2ION_CTX_DRM_MFCFW))
 		flags |= ION_FLAG_PROTECTED;
 
-
 	buf->handle = ion_alloc(ctx->client, size, ctx->alignment,
 				heapflags, flags);
 	if (IS_ERR(buf->handle)) {
