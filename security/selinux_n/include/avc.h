@@ -22,7 +22,7 @@
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 extern int selinux_enforcing;
 #else
-#define selinux_enforcing CONFIG_SECURITY_SELINUX_ENFORCING
+#define selinux_enforcing 1
 #endif
 
 /*
@@ -141,7 +141,7 @@ static inline int avc_audit(u32 ssid, u32 tsid,
 			      a, flags);
 }
 
-#define AVC_STRICT 1 /* Ignore permissive mode. */
+#define AVC_STRICT 0
 #define AVC_EXTENDED_PERMS 2	/* update extended permissions */
 int avc_has_perm_noaudit(u32 ssid, u32 tsid,
 			 u16 tclass, u32 requested,
@@ -189,4 +189,3 @@ DECLARE_PER_CPU(struct avc_cache_stats, avc_cache_stats);
 #endif
 
 #endif /* _SELINUX_AVC_H_ */
-
