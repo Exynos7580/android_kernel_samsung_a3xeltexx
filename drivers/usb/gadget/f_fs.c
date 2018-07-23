@@ -22,7 +22,6 @@
 #include <linux/pagemap.h>
 #include <linux/export.h>
 #include <linux/hid.h>
-#include <linux/workqueue.h>
 #include <asm/unaligned.h>
 
 #include <linux/usb/composite.h>
@@ -72,26 +71,6 @@ enum ffs_state {
 	 * succeed.
 	 */
 	FFS_ACTIVE,
-
- 	/*
-	 * Function is visible to host, but it's not functional. All
-	 * setup requests are stalled and transfers on another endpoints
-	 * are refused. All epfiles, except ep0, are deleted so there
-	 * is no way to perform any operations on them.
-	 *
-	 * This state is set after closing all functionfs files, when
-	 * mount parameter "no_disconnect=1" has been set. Function will
-	 * remain in deactivated state until filesystem is umounted or
-	 * ep0 is opened again. In the second case functionfs state will
-	 * be reset, and it will be ready for descriptors and strings
-	 * writing.
-	 *
-	 * This is useful only when functionfs is composed to gadget
-	 * with another function which can perform some critical
-	 * operations, and it's strongly desired to have this operations
-	 * completed, even after functionfs files closure.
-	 */
-	FFS_DEACTIVATED,
 
 	/*
 	 * All endpoints have been closed.  This state is also set if
@@ -249,9 +228,6 @@ struct ffs_data {
 		kgid_t				gid;
 	}				file_perms;
 
-	bool no_disconnect;
-	struct work_struct reset_work;
-
 	/*
 	 * The endpoint files, filled by ffs_epfiles_create(),
 	 * destroyed by ffs_epfiles_destroy().
@@ -349,8 +325,6 @@ struct ffs_epfile {
 	unsigned char			isoc;	/* P: ffs->eps_lock */
 
 	unsigned char			_pad;
-	unsigned long			buf_len;
-	char				*buffer;
 };
 
 static int  __must_check ffs_epfiles_create(struct ffs_data *ffs);
@@ -804,30 +778,12 @@ first_try:
 				goto error;
 			}
 
-
-                        /* Don't wait on write if device is offline */
-                        if (!read) {
-                                ret = -ENODEV;
-                                goto error;
-                        }
-
-
-                        /*
-                         * if ep is disabled, this fails all current IOs
-                         * and wait for next epfile open to happen
-                         */
-                        ret = wait_event_interruptible(epfile->wait, (ep = epfile->ep));
-                        if (ret < 0)
-                                goto error;
-                        if (!ep) {
-                                ret = -ENODEV;
-                                goto error;
-                        }
-
-
-
+			if (wait_event_interruptible(epfile->wait,
+						     (ep = epfile->ep))) {
+				ret = -EINTR;
+				goto error;
+			}
 		}
-
 
 		/* Do we halt? */
 		halt = !read == !epfile->in;
@@ -888,38 +844,15 @@ first_try:
 		spin_unlock_irq(&epfile->ffs->eps_lock);
 
 		if (unlikely(ret < 0)) {
-			ret = -EIO;
+			/* nop */
 		} else if (unlikely(wait_for_completion_interruptible(&done))) {
-                        spin_lock_irq(&epfile->ffs->eps_lock);
-                        /*
-                         * While we were acquiring lock endpoint got disabled
-                         * (disconnect) or changed (composition switch) ?
-                         */
-                        if (epfile->ep == ep)
-                                usb_ep_dequeue(ep->ep, req);
-                        spin_unlock_irq(&epfile->ffs->eps_lock);
-                        ret = -EINTR;
-
+			ret = -EINTR;
+			usb_ep_dequeue(ep->ep, req);
 		} else {
-                        spin_lock_irq(&epfile->ffs->eps_lock);
-                        /*
-                         * While we were acquiring lock endpoint got disabled
-                         * (disconnect) or changed (composition switch) ?
-                         */
-                        if (epfile->ep == ep)
-                                ret = ep->status;
-                        else
-                                ret = -ENODEV;
-                        spin_unlock_irq(&epfile->ffs->eps_lock);
-                        if (read && ret > 0) {
-                                        if (unlikely(copy_to_user(
-                                                buf, data, ret))) {
-                                        pr_err("Fail to copy to user len:%zd\n",
-                                                                        ret);
-                                        ret = -EFAULT;
-                                }
-                        }
-
+			ret = ep->status;
+			if (read && ret > 0 &&
+			    unlikely(copy_to_user(buf, data, ret)))
+				ret = -EFAULT;
 		}
 	}
 
@@ -986,7 +919,7 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 		return -ENODEV;
 
 	spin_lock_irq(&epfile->ffs->eps_lock);
-	if (epfile->ep) {
+	if (likely(epfile->ep)) {
 		switch (code) {
 		case FUNCTIONFS_FIFO_STATUS:
 			ret = usb_ep_fifo_status(epfile->ep->ep);
@@ -1005,8 +938,7 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 			ret = -ENOTTY;
 		}
 	} else {
-			ret = -ENODEV;
-		
+		ret = -ENODEV;
 	}
 	spin_unlock_irq(&epfile->ffs->eps_lock);
 
@@ -1102,7 +1034,6 @@ struct ffs_sb_fill_data {
 	struct ffs_file_perms perms;
 	umode_t root_mode;
 	const char *dev_name;
-	bool no_disconnect;
 	struct ffs_data *ffs_data;
 };
 
@@ -1173,12 +1104,6 @@ static int ffs_fs_parse_opts(struct ffs_sb_fill_data *data, char *opts)
 
 		/* Interpret option */
 		switch (eq - opts) {
-		case 13:
-			if (!memcmp(opts, "no_disconnect", 13))
-				data->no_disconnect = !!value;
-			else
-				goto invalid;
-			break;
 		case 5:
 			if (!memcmp(opts, "rmode", 5))
 				data->root_mode  = (value & 0555) | S_IFDIR;
@@ -1243,7 +1168,6 @@ ffs_fs_mount(struct file_system_type *t, int flags,
 			.gid = GLOBAL_ROOT_GID,
 		},
 		.root_mode = S_IFDIR | 0500,
-		.no_disconnect = false,
 	};
 	struct dentry *rv;
 	int ret;
@@ -1260,7 +1184,6 @@ ffs_fs_mount(struct file_system_type *t, int flags,
 	if (unlikely(!ffs))
 		return ERR_PTR(-ENOMEM);
 	ffs->file_perms = data.perms;
-	ffs->no_disconnect = data.no_disconnect;
 
 	ffs->dev_name = kstrdup(dev_name, GFP_KERNEL);
 	if (unlikely(!ffs->dev_name)) {
@@ -1292,7 +1215,6 @@ ffs_fs_kill_sb(struct super_block *sb)
 	kill_litter_super(sb);
 	if (sb->s_fs_info) {
 		functionfs_release_dev_callback(sb->s_fs_info);
-		ffs_data_closed(sb->s_fs_info);
 		ffs_data_put(sb->s_fs_info);
 	}
 }
@@ -1349,11 +1271,7 @@ static void ffs_data_opened(struct ffs_data *ffs)
 	ENTER();
 
 	atomic_inc(&ffs->ref);
-	if (atomic_add_return(1, &ffs->opened) == 1 &&
-			ffs->state == FFS_DEACTIVATED) {
-		ffs->state = FFS_CLOSING;
-		ffs_data_reset(ffs);
-	}
+	atomic_inc(&ffs->opened);
 }
 
 static void ffs_data_put(struct ffs_data *ffs)
@@ -1375,21 +1293,6 @@ static void ffs_data_closed(struct ffs_data *ffs)
 	ENTER();
 
 	if (atomic_dec_and_test(&ffs->opened)) {
-		if (ffs->no_disconnect) {
-			ffs->state = FFS_DEACTIVATED;
-			if (ffs->epfiles) {
-				ffs_epfiles_destroy(ffs->epfiles,
-						   ffs->eps_count);
-				ffs->epfiles = NULL;
-			}
-			if (ffs->setup_state == FFS_SETUP_PENDING)
-				__ffs_ep0_stall(ffs);
-		} else {
-			ffs->state = FFS_CLOSING;
-			ffs_data_reset(ffs);
-		}
-	}
-	if (atomic_read(&ffs->opened) < 0) {
 		ffs->state = FFS_CLOSING;
 		ffs_data_reset(ffs);
 	}
@@ -1557,7 +1460,6 @@ static void ffs_epfiles_destroy(struct ffs_epfile *epfiles, unsigned count)
 			dput(epfile->dentry);
 			epfile->dentry = NULL;
 		}
-		kfree(epfile->buffer);
 	}
 
 	kfree(epfiles);
@@ -1641,13 +1543,10 @@ static void ffs_func_eps_disable(struct ffs_function *func)
 		/* pending requests get nuked */
 		if (likely(ep->ep))
 			usb_ep_disable(ep->ep);
+		epfile->ep = NULL;
 
 		++ep;
-
-		if (epfile) {
-			epfile->ep = NULL;
-			++epfile;
-		}
+		++epfile;
 	} while (--count);
 	spin_unlock_irqrestore(&func->ffs->eps_lock, flags);
 }
@@ -2390,15 +2289,6 @@ error:
 
 /* Other USB function hooks *************************************************/
 
-
-static void ffs_reset_work(struct work_struct *work)
-{
-	struct ffs_data *ffs = container_of(work,
-		struct ffs_data, reset_work);
-	ffs_data_reset(ffs);
-}
-
-
 static void ffs_func_unbind(struct usb_configuration *c,
 			    struct usb_function *f)
 {
@@ -2430,17 +2320,8 @@ static int ffs_func_set_alt(struct usb_function *f,
 			return intf;
 	}
 
-	if (ffs->func) {
+	if (ffs->func)
 		ffs_func_eps_disable(ffs->func);
-		ffs->func = NULL;
-	}
-
-	if (ffs->state == FFS_DEACTIVATED) {
-		ffs->state = FFS_CLOSING;
-		INIT_WORK(&ffs->reset_work, ffs_reset_work);
-		schedule_work(&ffs->reset_work);
-		return -ENODEV;
-	}
 
 	if (ffs->state != FFS_ACTIVE)
 		return -ENODEV;

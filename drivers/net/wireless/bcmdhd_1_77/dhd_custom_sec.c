@@ -356,7 +356,6 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 #define RSDBINFO	PLATFORM_PATH".rsdb.info"
 #define LOGTRACEINFO	PLATFORM_PATH".logtrace.info"
 #define ADPSINFO	PLATFORM_PATH".adps.info"
-#define SOFTAPINFO	PLATFORM_PATH".softap.info"
 
 #ifdef DHD_PM_CONTROL_FROM_FILE
 extern bool g_pm_control;
@@ -365,6 +364,7 @@ void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 	struct file *fp = NULL;
 	char *filepath = PSMINFO;
 	char power_val = 0;
+	char iovbuf[WL_EVENTING_MASK_LEN + 12];
 	int ret = 0;
 #ifdef DHD_ENABLE_LPC
 	uint32 lpc = 0;
@@ -388,6 +388,7 @@ void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 #ifdef ROAM_ENABLE
 			uint roamvar = 1;
 #endif
+			uint32 ocl_enable = 0;
 			uint32 wl_updown = 1;
 
 			*power_mode = PM_OFF;
@@ -396,19 +397,24 @@ void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 				sizeof(uint), TRUE, 0);
 #ifndef CUSTOM_SET_ANTNPM
 			/* Turn off MPC in AP mode */
-			dhd_iovar(dhd, 0, "mpc", (char *)power_mode, sizeof(*power_mode), NULL, 0,
-					TRUE);
+			bcm_mkiovar("mpc", (char *)power_mode, 4,
+				iovbuf, sizeof(iovbuf));
+			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf,
+				sizeof(iovbuf), TRUE, 0);
 #endif /* !CUSTOM_SET_ANTNPM */
 			g_pm_control = TRUE;
 #ifdef ROAM_ENABLE
 			/* Roaming off of dongle */
-			dhd_iovar(dhd, 0, "roam_off", (char *)&roamvar, sizeof(roamvar), NULL, 0,
-					TRUE);
+			bcm_mkiovar("roam_off", (char *)&roamvar, 4,
+				iovbuf, sizeof(iovbuf));
+			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf,
+				sizeof(iovbuf), TRUE, 0);
 #endif
 #ifdef DHD_ENABLE_LPC
 			/* Set lpc 0 */
-			ret = dhd_iovar(dhd, 0, "lpc", (char *)&lpc, sizeof(lpc), NULL, 0, TRUE);
-			if (ret < 0) {
+			bcm_mkiovar("lpc", (char *)&lpc, 4, iovbuf, sizeof(iovbuf));
+			if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf,
+				sizeof(iovbuf), TRUE, 0)) < 0) {
 				DHD_ERROR(("[WIFI_SEC] %s: Set lpc failed  %d\n",
 				__FUNCTION__, ret));
 			}
@@ -425,20 +431,21 @@ void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 			}
 
 #ifndef CUSTOM_SET_OCLOFF
-			{
-				uint32 ocl_enable = 0;
-				ret = dhd_iovar(dhd, 0, "ocl_enable", (char *)&ocl_enable,
-						sizeof(ocl_enable), NULL, 0, TRUE);
-				if (ret < 0) {
-					DHD_ERROR(("[WIFI_SEC] %s: Set ocl_enable %d failed %d\n",
+			bcm_mkiovar("ocl_enable", (char *)&ocl_enable, 4, iovbuf, sizeof(iovbuf));
+			if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf,
+					sizeof(iovbuf), TRUE, 0)) < 0) {
+				DHD_ERROR(("[WIFI_SEC] %s: Set ocl_enable %d failed %d\n",
 						__FUNCTION__, ocl_enable, ret));
-				} else {
-					DHD_ERROR(("[WIFI_SEC] %s: Set ocl_enable %d OK %d\n",
+			} else {
+				DHD_ERROR(("[WIFI_SEC] %s: Set ocl_enable %d succeeded %d\n",
 						__FUNCTION__, ocl_enable, ret));
-				}
 			}
 #else
-			dhd->ocl_off = TRUE;
+			if (ocl_enable == 0) {
+				dhd->ocl_off = TRUE;
+			} else {
+				dhd->ocl_off = FALSE;
+			}
 #endif /* CUSTOM_SET_OCLOFF */
 #ifdef WLADPS
 			if ((ret = dhd_enable_adps(dhd, ADPS_DISABLE)) < 0) {
@@ -477,6 +484,7 @@ int dhd_sel_ant_from_file(dhd_pub_t *dhd)
 	uint32 rsdb_mode = 0;
 #endif /* !CUSTOM_SET_ANTNPM */
 	char *filepath = ANTINFO;
+	char iovbuf[WLC_IOCTL_SMLEN];
 	uint chip_id = dhd_bus_chip_id(dhd);
 
 	/* Check if this chip can support MIMO */
@@ -525,8 +533,8 @@ int dhd_sel_ant_from_file(dhd_pub_t *dhd)
 
 	/* bt coex mode off */
 	if (dhd_get_fw_mode(dhd->info) == DHD_FLAG_MFG_MODE) {
-		ret = dhd_iovar(dhd, 0, "btc_mode", (char *)&btc_mode, sizeof(btc_mode), NULL, 0,
-				TRUE);
+		bcm_mkiovar("btc_mode", (char *)&btc_mode, 4, iovbuf, sizeof(iovbuf));
+		ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 		if (ret) {
 			DHD_ERROR(("[WIFI_SEC] %s: Fail to execute dhd_wl_ioctl_cmd(): "
 				"btc_mode, ret=%d\n",
@@ -539,7 +547,8 @@ int dhd_sel_ant_from_file(dhd_pub_t *dhd)
 	/* rsdb mode off */
 	DHD_ERROR(("[WIFI_SEC] %s: %s the RSDB mode!\n",
 		__FUNCTION__, rsdb_mode ? "Enable" : "Disable"));
-	ret = dhd_iovar(dhd, 0, "rsdb_mode", (char *)&rsdb_mode, sizeof(rsdb_mode), NULL, 0, TRUE);
+	bcm_mkiovar("rsdb_mode", (char *)&rsdb_mode, 4, iovbuf, sizeof(iovbuf));
+	ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 	if (ret) {
 		DHD_ERROR(("[WIFI_SEC] %s: Fail to execute dhd_wl_ioctl_cmd(): "
 			"rsdb_mode, ret=%d\n", __FUNCTION__, ret));
@@ -547,14 +556,16 @@ int dhd_sel_ant_from_file(dhd_pub_t *dhd)
 	}
 
 	/* Select Antenna */
-	ret = dhd_iovar(dhd, 0, "txchain", (char *)&ant_val, sizeof(ant_val), NULL, 0, TRUE);
+	bcm_mkiovar("txchain", (char *)&ant_val, 4, iovbuf, sizeof(iovbuf));
+	ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 	if (ret) {
 		DHD_ERROR(("[WIFI_SEC] %s: Fail to execute dhd_wl_ioctl_cmd(): txchain, ret=%d\n",
 			__FUNCTION__, ret));
 		return ret;
 	}
 
-	ret = dhd_iovar(dhd, 0, "rxchain", (char *)&ant_val, sizeof(ant_val), NULL, 0, TRUE);
+	bcm_mkiovar("rxchain", (char *)&ant_val, 4, iovbuf, sizeof(iovbuf));
+	ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 	if (ret) {
 		DHD_ERROR(("[WIFI_SEC] %s: Fail to execute dhd_wl_ioctl_cmd(): rxchain, ret=%d\n",
 			__FUNCTION__, ret));
@@ -581,6 +592,7 @@ int dhd_rsdb_mode_from_file(dhd_pub_t *dhd)
 	int ret = -1;
 	uint32 rsdb_mode = 0;
 	char *filepath = RSDBINFO;
+	char iovbuf[WLC_IOCTL_SMLEN];
 
 	/* Read RSDB on/off request from the file */
 	fp = filp_open(filepath, O_RDONLY, 0);
@@ -609,9 +621,11 @@ int dhd_rsdb_mode_from_file(dhd_pub_t *dhd)
 	}
 
 	if (rsdb_mode == 0) {
-		ret = dhd_iovar(dhd, 0, "rsdb_mode", (char *)&rsdb_mode, sizeof(rsdb_mode), NULL, 0,
-				TRUE);
-		if (ret < 0) {
+		bcm_mkiovar("rsdb_mode", (char *)&rsdb_mode, sizeof(rsdb_mode),
+			iovbuf, sizeof(iovbuf));
+
+		if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR,
+				iovbuf, sizeof(iovbuf), TRUE, 0)) < 0) {
 			DHD_ERROR(("[WIFI_SEC] %s: rsdb_mode ret= %d\n", __FUNCTION__, ret));
 		} else {
 			DHD_ERROR(("[WIFI_SEC] %s: rsdb_mode to MIMO(RSDB OFF) succeeded\n",
@@ -948,7 +962,7 @@ dhd_force_disable_singlcore_scan(dhd_pub_t *dhd)
 }
 #endif /* FORCE_DISABLE_SINGLECORE_SCAN */
 
-#if defined(ARGOS_CPU_SCHEDULER) && defined(CONFIG_SCHED_HMP)
+#if defined(ARGOS_CPU_SCHEDULER)
 void
 set_irq_cpucore(unsigned int irq, cpumask_var_t default_cpu_mask,
 	cpumask_var_t affinity_cpu_mask)
@@ -1049,95 +1063,3 @@ void dhd_adps_mode_from_file(dhd_pub_t *dhd)
 	return;
 }
 #endif /* ADPS_MODE_FROM_FILE */
-
-#ifdef GEN_SOFTAP_INFO_FILE
-#define SOFTAP_INFO_FILE_FIRST_LINE	"#.softap.info"
-#define SOFTAP_INFO_BUF_SZ	512
-/*
- * # Whether both wifi and hotspot can be turned on at the same time?
- * DualBandConcurrency
- * # 5Ghz band support?
- * 5G
- * # How many clients can be connected?
- * maxClient
- * # Does hotspot support PowerSave mode?
- * PowerSave
- * # Does android_net_wifi_set_Country_Code_Hal feature supported?
- * HalFn_setCountryCodeHal
- * # Does android_net_wifi_getValidChannels supported?
- * HalFn_getValidChannels
- */
-const char *softap_info_items[] = {
-	"DualBandConcurrency", "5G", "maxClient", "PowerSave",
-	"HalFn_setCountryCodeHal", "HalFn_getValidChannels", NULL
-};
-#if defined(BCM4361_CHIP)
-const char *softap_info_values[] = {
-	"yes", "yes", "10", "yes", "yes", "yes", NULL
-};
-#elif defined(BCM43455_CHIP)
-const char *softap_info_values[] = {
-	"no", "yes", "10", "no", "yes", "yes", NULL
-};
-#elif defined(BCM43430_CHIP)
-const char *softap_info_values[] = {
-	"no", "no", "10", "no", "yes", "yes", NULL
-};
-#else
-const char *softap_info_values[] = {
-	"UNDEF", "UNDEF", "UNDEF", "UNDEF", "UNDEF", "UNDEF", NULL
-};
-#endif /* defined(BCM4361_CHIP) */
-#endif /* GEN_SOFTAP_INFO_FILE */
-
-#ifdef GEN_SOFTAP_INFO_FILE
-uint32 sec_save_softap_info(void)
-{
-	struct file *fp = NULL;
-	char *filepath = SOFTAPINFO;
-	char temp_buf[SOFTAP_INFO_BUF_SZ];
-	int ret = -1, idx = 0, rem = 0, written = 0;
-	char *pos = NULL;
-
-	DHD_TRACE(("[WIFI_SEC] %s: Entered.\n", __FUNCTION__));
-	memset(temp_buf, 0, sizeof(temp_buf));
-
-	fp = filp_open(filepath, O_RDONLY, 0);
-	if (IS_ERR(fp) || (fp == NULL)) {
-		DHD_ERROR(("[WIFI_SEC] %s: %s File open failed.(%ld)\n",
-			SOFTAPINFO, __FUNCTION__, PTR_ERR(fp)));
-	} else {
-		filp_close(fp, NULL);
-		DHD_ERROR(("[WIFI_SEC] %s already saved.\n", SOFTAPINFO));
-		return 0;
-	}
-
-	pos = temp_buf;
-	rem = sizeof(temp_buf);
-	written = snprintf(pos, sizeof(temp_buf), "%s\n",
-		SOFTAP_INFO_FILE_FIRST_LINE);
-	do {
-		int len = strlen(softap_info_items[idx]) +
-			strlen(softap_info_values[idx]) + 2;
-		pos += written;
-		rem -= written;
-		if (len > rem) {
-			break;
-		}
-		written = snprintf(pos, rem, "%s=%s\n",
-			softap_info_items[idx], softap_info_values[idx]);
-	} while (softap_info_items[++idx] != NULL);
-
-	fp = filp_open(filepath, O_RDWR | O_CREAT, 0664);
-	if (IS_ERR(fp) || (fp == NULL)) {
-		DHD_ERROR(("[WIFI_SEC] %s: %s File open failed.\n",
-			SOFTAPINFO, __FUNCTION__));
-	} else {
-		ret = write_filesystem(fp, fp->f_pos, temp_buf, strlen(temp_buf));
-		DHD_INFO(("[WIFI_SEC] %s done. ret : %d\n", __FUNCTION__, ret));
-		DHD_ERROR(("[WIFI_SEC] save %s file.\n", SOFTAPINFO));
-		filp_close(fp, NULL);
-	}
-	return ret;
-}
-#endif /* GEN_SOFTAP_INFO_FILE */

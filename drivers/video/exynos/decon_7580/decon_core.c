@@ -1126,35 +1126,6 @@ err:
 	return ret;
 }
 
-
-static void decon_deactivate_vsync(struct decon_device *decon)
-{
-        struct decon_psr_info psr;
-        int new_refcount, ret;
-
-        mutex_lock(&decon->vsync_info.irq_lock);
-
-        new_refcount = --decon->vsync_info.irq_refcount;
-        WARN_ON(new_refcount < 0);
-        if (!new_refcount) {
-                if (decon->pdata->psr_mode == DECON_VIDEO_MODE) {
-                        decon_to_psr_info(decon, &psr);
-                        decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 0);
-                        ret = v4l2_subdev_call(decon->output_sd, core, ioctl,
-                                        DSIM_IOC_VSYNC, (unsigned long *)0);
-                        if (ret)
-                                decon_err("%s: failed to disable dsim vsync int %s\n",
-                                                __func__, decon->output_sd->name);
-                }
-                DISP_SS_EVENT_LOG(DISP_EVT_DEACT_VSYNC, &decon->sd, ktime_set(0, 0));
-        }
-
-        mutex_unlock(&decon->vsync_info.irq_lock);
-}
-
-
-
-
 static int decon_blank(int blank_mode, struct fb_info *info)
 {
 	struct decon_win *win = info->par;
@@ -1191,14 +1162,6 @@ static int decon_blank(int blank_mode, struct fb_info *info)
 		}
 		break;
 	case FB_BLANK_VSYNC_SUSPEND:
-                ret = decon_enable(decon);
-                if (ret) {
-                        decon_err("failed to enable decon\n");
-                        goto blank_exit;
-                }
-
-		decon_deactivate_vsync(decon);
-		break;
 	case FB_BLANK_HSYNC_SUSPEND:
 	default:
 		ret = -EINVAL;
@@ -1230,6 +1193,31 @@ static void decon_activate_vsync(struct decon_device *decon)
 						__func__, decon->output_sd->name);
 		}
 		DISP_SS_EVENT_LOG(DISP_EVT_ACT_VSYNC, &decon->sd, ktime_set(0, 0));
+	}
+
+	mutex_unlock(&decon->vsync_info.irq_lock);
+}
+
+static void decon_deactivate_vsync(struct decon_device *decon)
+{
+	struct decon_psr_info psr;
+	int new_refcount, ret;
+
+	mutex_lock(&decon->vsync_info.irq_lock);
+
+	new_refcount = --decon->vsync_info.irq_refcount;
+	WARN_ON(new_refcount < 0);
+	if (!new_refcount) {
+		if (decon->pdata->psr_mode == DECON_VIDEO_MODE) {
+			decon_to_psr_info(decon, &psr);
+			decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 0);
+			ret = v4l2_subdev_call(decon->output_sd, core, ioctl,
+					DSIM_IOC_VSYNC, (unsigned long *)0);
+			if (ret)
+				decon_err("%s: failed to disable dsim vsync int %s\n",
+						__func__, decon->output_sd->name);
+		}
+		DISP_SS_EVENT_LOG(DISP_EVT_DEACT_VSYNC, &decon->sd, ktime_set(0, 0));
 	}
 
 	mutex_unlock(&decon->vsync_info.irq_lock);

@@ -133,9 +133,9 @@ u32 cal_get_table_ver(void);
 u32 is_max_limit_sample(void);
 
 #ifdef CONFIG_SOC_EXYNOS7420
-//u32 cal_get_asv_info(int id);
+u32 cal_get_asv_info(int id);
 #else
-//extern u32 cal_get_asv_info(int id){return 0;};
+extern inline u32 cal_get_asv_info(int id){return 0;};
 #endif
 
 #ifdef CONFIG_SOC_EXYNOS5433
