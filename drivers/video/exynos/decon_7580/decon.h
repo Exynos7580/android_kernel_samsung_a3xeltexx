@@ -592,7 +592,9 @@ void DISP_SS_EVENT_LOG_CMD(struct v4l2_subdev *sd, u32 cmd_id, unsigned long dat
 void DISP_SS_EVENT_SHOW(struct seq_file *s, struct decon_device *decon, int base_idx, bool sync);
 void DISP_SS_EVENT_LOG_WIN_CONFIG(struct v4l2_subdev *sd, struct decon_win_config_data *win_data);
 void DISP_SS_EVENT_SIZE_ERR_LOG(struct v4l2_subdev *sd, struct disp_ss_size_info *info);
-#else /*!*/
+
+
+#else
 #define DISP_SS_EVENT_START(...) do { } while(0)
 #define DISP_SS_EVENT_LOG(...) do { } while(0)
 #define DISP_SS_EVENT_LOG_WINCON(...) do { } while(0)
@@ -602,6 +604,8 @@ void DISP_SS_EVENT_SIZE_ERR_LOG(struct v4l2_subdev *sd, struct disp_ss_size_info
 #define DISP_SS_EVENT_LOG_WIN_CONFIG(...) do { } while(0)
 #define DISP_SS_EVENT_SIZE_ERR_LOG(...) do { } while(0)
 #endif
+
+
 
 /**
 * END of CONFIG_DECON_EVENT_LOG

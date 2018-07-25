@@ -37,7 +37,7 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/f_mtp.h>
 
-#define MTP_BULK_BUFFER_SIZE       131072
+#define MTP_BULK_BUFFER_SIZE       16384
 #define INTR_BUFFER_SIZE           28
 
 /* String IDs */
@@ -581,7 +581,8 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 	struct usb_request *req;
 	ssize_t r = count;
 	unsigned xfer;
-	int ret, len = 0;
+	int len;
+	int ret = 0;
 
 	DBG(cdev, "mtp_read(%zu)\n", count);
 

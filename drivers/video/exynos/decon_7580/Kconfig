@@ -70,7 +70,7 @@ config DECON_USE_BOOTLOADER_FB
 
 config DECON_EVENT_LOG
 	bool "Display sub-system event logger (DECON/DSIM)"
-        depends on DEBUG_INFO && EXYNOS_DECON_EXYNOS7580
+        depends on EXYNOS_DECON_EXYNOS7580
         default y
 
 source "drivers/video/exynos/decon_7580/panels/Kconfig"
