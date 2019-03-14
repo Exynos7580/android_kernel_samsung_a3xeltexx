@@ -11,7 +11,7 @@
 
 /dts-v1/;
 #include "exynos7580-reserve-1500MB.dtsi"
-#include "exynos7580.dtsi"
+#include "exynos7580-q.dtsi"
 #include "modem-isla-pdata.dtsi"
 #include "exynos7580-a3xelte_battery_rev01.dtsi"
 #include "exynos7580-a3xelte_eur_open_gpio_02.dtsi"
@@ -569,6 +569,13 @@ i2c@33 {
 			pinfunc_on = <2>;
 			pinfunc_off = <0>;
 		};
+		dwc9807_i2c@18 {
+                        compatible = "dongwoon,dw9807-vcm";
+                        reg = <0x18>;
+                        use_i2c_pinctrl;
+                        pinfunc_on = <2>;
+                        pinfunc_off = <0>;
+		};
 	};
 
 	hsi2c@13890000 {
@@ -592,6 +599,8 @@ i2c@33 {
 					regulator-name = "VDDAF_2.8V_CAM";
 					regulator-min-microvolt = <2800000>;
 					regulator-max-microvolt = <2800000>;
+                                        regulator-always-on;
+                                        regulator-boot-on;
 				};
 			};
 

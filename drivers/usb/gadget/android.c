@@ -24,10 +24,6 @@
 #include <linux/utsname.h>
 #include <linux/platform_device.h>
 
-#ifdef CONFIG_USB_NOTIFY_PROC_LOG
-#include <linux/usblog_proc_notify.h>
-#endif
-
 #include <linux/usb/ch9.h>
 #include <linux/usb/composite.h>
 #include <linux/usb/gadget.h>
@@ -214,9 +210,6 @@ static void android_work(struct work_struct *data)
 
 	if (uevent_envp) {
 		kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE, uevent_envp);
-#ifdef CONFIG_USB_NOTIFY_PROC_LOG
-		store_usblog_notify(NOTIFY_USBSTATE, (void *)uevent_envp[0], NULL);
-#endif
 		printk(KERN_DEBUG "usb: %s sent uevent %s\n",
 			 __func__, uevent_envp[0]);
 	} else {
@@ -258,6 +251,7 @@ struct functionfs_config {
 	bool opened;
 	bool enabled;
 	struct ffs_data *data;
+	struct android_dev *dev;
 };
 
 static int ffs_function_init(struct android_usb_function *f,
@@ -365,21 +359,31 @@ static int functionfs_ready_callback(struct ffs_data *ffs)
 	struct functionfs_config *config = ffs_function.config;
 	int ret = 0;
 
-	mutex_lock(&dev->mutex);
-
-	ret = functionfs_bind(ffs, dev->cdev);
-	if (ret)
-		goto err;
+	/* dev is null in case ADB is not in the composition */
+	if (dev) {
+		mutex_lock(&dev->mutex);
+		ret = functionfs_bind(ffs, dev->cdev);
+		if (ret) {
+			mutex_unlock(&dev->mutex);
+			return ret;
+		}
+	} else {
+		/* android ffs_func requires daemon to start only after enable*/
+		pr_debug("start adbd only in ADB composition\n");
+		return -ENODEV;
+	}
 
 	config->data = ffs;
 	config->opened = true;
+	/* Save dev in case the adb function will get disabled */
+	config->dev = dev;
 
 	if (config->enabled)
 		android_enable(dev);
 
-err:
 	mutex_unlock(&dev->mutex);
-	return ret;
+
+	return 0;
 }
 
 static void functionfs_closed_callback(struct ffs_data *ffs)
@@ -387,17 +391,32 @@ static void functionfs_closed_callback(struct ffs_data *ffs)
 	struct android_dev *dev = _android_dev;
 	struct functionfs_config *config = ffs_function.config;
 
-	mutex_lock(&dev->mutex);
+	/*
+	 * In case new composition is without ADB or ADB got disabled by the
+	 * time ffs_daemon was stopped then use saved one
+	 */
+	if (!dev)
+		dev = config->dev;
 
-	if (config->enabled)
+	/* fatal-error: It should never happen */
+	if (!dev)
+		pr_err("adb_closed_callback: config->dev is NULL");
+
+	if (dev)
+		mutex_lock(&dev->mutex);
+
+	if (config->enabled && dev)
 		android_disable(dev);
+
+	config->dev = NULL;
 
 	config->opened = false;
 	config->data = NULL;
 
 	functionfs_unbind(ffs);
 
-	mutex_unlock(&dev->mutex);
+	if (dev)
+		mutex_unlock(&dev->mutex);
 }
 
 static void *functionfs_acquire_dev_callback(const char *dev_name)
@@ -1793,13 +1812,8 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
 
-#ifdef CONFIG_USB_NOTIFY_PROC_LOG
-		store_usblog_notify(NOTIFY_USBMODE, (void *)b, NULL);
-#endif
 	while (b) {
 		name = strsep(&b, ",");
-		if (!name)
-			continue;
 
 		is_ffs = 0;
 		strlcpy(aliases, dev->ffs_aliases, sizeof(aliases));

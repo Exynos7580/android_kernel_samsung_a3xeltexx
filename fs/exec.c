@@ -1480,13 +1480,7 @@ int search_binary_handler(struct linux_binprm *bprm)
 
 EXPORT_SYMBOL(search_binary_handler);
 
-#if defined CONFIG_SEC_RESTRICT_FORK
-#if defined CONFIG_SEC_RESTRICT_ROOTING_LOG
 #define PRINT_LOG(...)	printk(KERN_ERR __VA_ARGS__)
-#else
-#define PRINT_LOG(...)
-#endif	// End of CONFIG_SEC_RESTRICT_ROOTING_LOG
-
 #define CHECK_ROOT_UID(x) (x->cred->uid == 0 || x->cred->gid == 0 || \
 			x->cred->euid == 0 || x->cred->egid == 0 || \
 			x->cred->suid == 0 || x->cred->sgid == 0)
@@ -1556,6 +1550,7 @@ static int rkp_restrict_fork(void)
 	return 0;
 }
 #endif /*CONFIG_RKP_KDP*/
+#if 0
 static int sec_restrict_fork(void)
 {
 	struct cred *shellcred;
@@ -1622,7 +1617,7 @@ out:
 
 	return ret;
 }
-#endif	/* End of CONFIG_SEC_RESTRICT_FORK */
+#endif
 
 /*
  * sys_execve() executes a new program.

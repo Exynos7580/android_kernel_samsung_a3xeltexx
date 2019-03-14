@@ -923,12 +923,12 @@ static int exynos_cpufreq_init(struct cpufreq_policy *policy)
 		else
 			policy->cpuinfo.max_freq = 1400000;
 	} else if (soc_is_exynos7580_v1()) {
-		policy->cpuinfo.max_freq = 1600000;
+		policy->cpuinfo.max_freq = 1500000;
 		freq_table[cur_cluster][0].frequency = CPUFREQ_ENTRY_INVALID;
 	}
 
 	if (soc_is_exynos7580_v1())
-		policy->cpuinfo.max_freq = 1600000;
+		policy->cpuinfo.max_freq = 1500000;
 
 	cpumask_copy(policy->cpus, topology_core_cpumask(policy->cpu));
 

@@ -576,7 +576,8 @@ void decon_reg_set_int(u32 id, struct decon_psr_info *psr,
 		if (psr->psr_mode == DECON_MIPI_COMMAND_MODE) {
 			decon_write_mask(id, VIDINTCON1, ~0,
 						VIDINTCON1_INT_I80);
-			val |= VIDINTCON0_INT_FIFO | VIDINTCON0_INT_I80_EN;
+                        val |= VIDINTCON0_INT_FIFO | VIDINTCON0_INT_I80_EN | VIDINTCON0_INT_FRAME
+                                | VIDINTCON0_FRAMESEL0_VSYNC;
 		} else {
 			val |= VIDINTCON0_INT_FIFO | VIDINTCON0_INT_FRAME
 				| VIDINTCON0_FRAMESEL0_VSYNC;

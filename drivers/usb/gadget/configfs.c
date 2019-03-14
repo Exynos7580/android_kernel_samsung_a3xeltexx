@@ -5,7 +5,6 @@
 #include <linux/usb/composite.h>
 #include <linux/usb/gadget_configfs.h>
 
-
 int check_user_usb_string(const char *name,
 		struct usb_gadget_strings *stringtab_dev)
 {
@@ -394,6 +393,11 @@ static int config_usb_cfg_link(
 	}
 
 	f = usb_get_function(fi);
+	if (f == NULL) {
+		/* Are we trying to symlink PTP without MTP function? */
+		ret = -EINVAL; /* Invalid Configuration */
+		goto out;
+	}
 	if (IS_ERR(f)) {
 		ret = PTR_ERR(f);
 		goto out;
@@ -758,6 +762,7 @@ static void purge_configs_funcs(struct gadget_info *gi)
 			}
 		}
 		c->next_interface_id = 0;
+		memset(c->interface, 0, sizeof(c->interface));
 		c->superspeed = 0;
 		c->highspeed = 0;
 		c->fullspeed = 0;

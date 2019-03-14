@@ -449,6 +449,7 @@ static int may_context_mount_inode_relabel(u32 sid,
 	return rc;
 }
 
+#if 0
 static int selinux_is_sblabel_mnt(struct super_block *sb)
 {
 	struct superblock_security_struct *sbsec = sb->s_security;
@@ -465,6 +466,7 @@ static int selinux_is_sblabel_mnt(struct super_block *sb)
 		!strcmp(sb->s_type->name, "f2fs") ||
 		!strcmp(sb->s_type->name, "sdcardfs");
 }
+#endif
 
 static int sb_finish_set_opts(struct super_block *sb)
 {

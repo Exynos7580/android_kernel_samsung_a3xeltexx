@@ -44,13 +44,6 @@
 #include <sound/compress_offload.h>
 #include <sound/compress_driver.h>
 
-/* struct snd_compr_codec_caps overflows the ioctl bit size for some
- * architectures, so we need to disable the relevant ioctls.
- */
-#if _IOC_SIZEBITS < 14
-#define COMPR_CODEC_CAPS_OVERFLOW
-#endif
-
 /* TODO:
  * - add substream support for multiple devices in case of
  *	SND_DYNAMIC_MINORS is not used
@@ -434,7 +427,6 @@ out:
 	return retval;
 }
 
-#ifndef COMPR_CODEC_CAPS_OVERFLOW
 static int
 snd_compr_get_codec_caps(struct snd_compr_stream *stream, unsigned long arg)
 {
@@ -458,7 +450,6 @@ out:
 	kfree(caps);
 	return retval;
 }
-#endif /* !COMPR_CODEC_CAPS_OVERFLOW */
 
 /* revisit this with snd_pcm_preallocate_xxx */
 static int snd_compr_allocate_buffer(struct snd_compr_stream *stream,
@@ -638,11 +629,10 @@ static int snd_compr_pause(struct snd_compr_stream *stream)
 {
 	int retval;
 
-	if (stream->runtime->state != SNDRV_PCM_STATE_RUNNING
-		&& stream->runtime->state != SNDRV_PCM_STATE_DRAINING)
+	if (stream->runtime->state != SNDRV_PCM_STATE_RUNNING)
 		return -EPERM;
 	retval = stream->ops->trigger(stream, SNDRV_PCM_TRIGGER_PAUSE_PUSH);
-	if (!retval && stream->runtime->state != SNDRV_PCM_STATE_DRAINING)
+	if (!retval)
 		stream->runtime->state = SNDRV_PCM_STATE_PAUSED;
 	return retval;
 }
@@ -651,11 +641,10 @@ static int snd_compr_resume(struct snd_compr_stream *stream)
 {
 	int retval;
 
-	if (stream->runtime->state != SNDRV_PCM_STATE_PAUSED
-		&& stream->runtime->state != SNDRV_PCM_STATE_DRAINING)
+	if (stream->runtime->state != SNDRV_PCM_STATE_PAUSED)
 		return -EPERM;
 	retval = stream->ops->trigger(stream, SNDRV_PCM_TRIGGER_PAUSE_RELEASE);
-	if (!retval && stream->runtime->state != SNDRV_PCM_STATE_DRAINING)
+	if (!retval)
 		stream->runtime->state = SNDRV_PCM_STATE_RUNNING;
 	return retval;
 }
@@ -700,9 +689,7 @@ static int snd_compress_wait_for_drain(struct snd_compr_stream *stream)
 	 * stream will be moved to SETUP state, even if draining resulted in an
 	 * error. We can trigger next track after this.
 	 */
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 	stream->runtime->state = SNDRV_PCM_STATE_DRAINING;
-#endif
 	mutex_unlock(&stream->device->lock);
 
 	/* we wait for drain to complete here, drain can return when
@@ -725,17 +712,14 @@ static int snd_compress_wait_for_drain(struct snd_compr_stream *stream)
 	return ret;
 }
 
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 /* this fn is called without lock being held and we change stream states here
  * so while using the stream state auquire the lock but relase before invoking
  * DSP as the call will possibly take a while
  */
-#endif
 static int snd_compr_drain(struct snd_compr_stream *stream)
 {
 	int retval;
 
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 	mutex_lock(&stream->device->lock);
 	if (stream->runtime->state == SNDRV_PCM_STATE_PREPARED ||
 			stream->runtime->state == SNDRV_PCM_STATE_SETUP) {
@@ -743,29 +727,14 @@ static int snd_compr_drain(struct snd_compr_stream *stream)
 		goto ret;
 	}
 	mutex_unlock(&stream->device->lock);
-#else
-	if (stream->runtime->state == SNDRV_PCM_STATE_PREPARED ||
-			stream->runtime->state == SNDRV_PCM_STATE_SETUP)
-		return -EPERM;
-
-	/* offload state is changed to draining here, since trigger
-	 * function calls notify callback function which checks for
-	 * this state to decide the next state
-	 */
-	stream->runtime->state = SNDRV_PCM_STATE_DRAINING;
-#endif
 	retval = stream->ops->trigger(stream, SND_COMPR_TRIGGER_DRAIN);
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 	mutex_lock(&stream->device->lock);
-#endif
 	if (retval) {
 		pr_debug("SND_COMPR_TRIGGER_DRAIN failed %d\n", retval);
 		wake_up(&stream->runtime->sleep);
 		return retval;
 	}
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 ret:
-#endif
 	return snd_compress_wait_for_drain(stream);
 }
 
@@ -795,7 +764,6 @@ static int snd_compr_partial_drain(struct snd_compr_stream *stream)
 {
 	int retval;
 
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 	mutex_lock(&stream->device->lock);
 	if (stream->runtime->state == SNDRV_PCM_STATE_PREPARED ||
 			stream->runtime->state == SNDRV_PCM_STATE_SETUP) {
@@ -803,16 +771,6 @@ static int snd_compr_partial_drain(struct snd_compr_stream *stream)
 		return -EPERM;
 	}
 	mutex_unlock(&stream->device->lock);
-#else
-	if (stream->runtime->state == SNDRV_PCM_STATE_PREPARED ||
-			stream->runtime->state == SNDRV_PCM_STATE_SETUP)
-		return -EPERM;
-	/* offload state is changed to draining here, since trigger
-	 * function calls notify callback function which checks for
-	 * this state to decide the next state
-	 */
-	stream->runtime->state = SNDRV_PCM_STATE_DRAINING;
-#endif
 	/* stream can be drained only when next track has been signalled */
 	if (stream->next_track == false)
 		return -EPERM;
@@ -828,7 +786,6 @@ static int snd_compr_partial_drain(struct snd_compr_stream *stream)
 	return snd_compress_wait_for_drain(stream);
 }
 
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 static int snd_compress_simple_ioctls(struct file *file,
 				struct snd_compr_stream *stream,
 				unsigned int cmd, unsigned long arg)
@@ -868,7 +825,6 @@ static int snd_compress_simple_ioctls(struct file *file,
 	}
 	return retval;
 }
-#endif
 
 static long snd_compr_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
@@ -891,11 +847,9 @@ static long snd_compr_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	case _IOC_NR(SNDRV_COMPRESS_GET_CAPS):
 		retval = snd_compr_get_caps(stream, arg);
 		break;
-#ifndef COMPR_CODEC_CAPS_OVERFLOW
 	case _IOC_NR(SNDRV_COMPRESS_GET_CODEC_CAPS):
 		retval = snd_compr_get_codec_caps(stream, arg);
 		break;
-#endif
 	case _IOC_NR(SNDRV_COMPRESS_SET_PARAMS):
 		retval = snd_compr_set_params(stream, arg);
 		break;
@@ -908,14 +862,7 @@ static long snd_compr_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	case _IOC_NR(SNDRV_COMPRESS_GET_METADATA):
 		retval = snd_compr_get_metadata(stream, arg);
 		break;
-#ifdef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
-	case _IOC_NR(SNDRV_COMPRESS_TSTAMP):
-		retval = snd_compr_tstamp(stream, arg);
-		break;
-	case _IOC_NR(SNDRV_COMPRESS_AVAIL):
-		retval = snd_compr_ioctl_avail(stream, arg);
-		break;
-#endif
+
 	case _IOC_NR(SNDRV_COMPRESS_PAUSE):
 		retval = snd_compr_pause(stream);
 		break;
@@ -928,24 +875,14 @@ static long snd_compr_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	case _IOC_NR(SNDRV_COMPRESS_STOP):
 		retval = snd_compr_stop(stream);
 		break;
-#ifdef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
-	case _IOC_NR(SNDRV_COMPRESS_DRAIN):
-		retval = snd_compr_drain(stream);
-		break;
-	case _IOC_NR(SNDRV_COMPRESS_PARTIAL_DRAIN):
-		retval = snd_compr_partial_drain(stream);
-		break;
-#endif
 
 	case _IOC_NR(SNDRV_COMPRESS_NEXT_TRACK):
 		retval = snd_compr_next_track(stream);
 		break;
 
-#ifndef CONFIG_SND_SAMSUNG_SEIREN_OFFLOAD
 	default:
 		mutex_unlock(&stream->device->lock);
 		return snd_compress_simple_ioctls(f, stream, cmd, arg);
-#endif
 
 	}
 	mutex_unlock(&stream->device->lock);

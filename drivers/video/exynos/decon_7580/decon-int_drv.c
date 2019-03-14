@@ -778,25 +778,34 @@ int decon_int_register_irq(struct platform_device *pdev, struct decon_device *de
 		return ret;
 	}
 
-	if (decon->pdata->psr_mode == DECON_MIPI_COMMAND_MODE) {
-		/* 1: i80 irq */
-		res = platform_get_resource(pdev, IORESOURCE_IRQ, 1);
-		ret = devm_request_irq(dev, res->start, decon_int_irq_handler,
-				0, pdev->name, decon);
-		if (ret) {
-			decon_err("failed to install irq\n");
-			return ret;
-		}
-	} else if (decon->pdata->psr_mode == DECON_VIDEO_MODE) {
-		/* 2: frame irq */
-		res = platform_get_resource(pdev, IORESOURCE_IRQ, 2);
-		ret = devm_request_irq(dev, res->start, decon_int_irq_handler,
-				0, pdev->name, decon);
-		if (ret) {
-			decon_err("failed to install irq\n");
-			return ret;
-		}
-	}
+        /* 1: frame irq (Vsync) */
+        res = platform_get_resource(pdev, IORESOURCE_IRQ, 1);
+        if (!res) {
+                decon_err("failed to get platform resource\n");
+                return -EINVAL;
+        }
+        ret = devm_request_irq(dev, res->start, decon_int_irq_handler,
+                        0, pdev->name, decon);
+        if (ret) {
+                decon_err("failed to install VSYNC irq\n");
+                return ret;
+        }
+
+        if (decon->pdata->psr_mode == DECON_MIPI_COMMAND_MODE) {
+                /* 1: i80 irq (framedone) */
+                res = platform_get_resource(pdev, IORESOURCE_IRQ, 2);
+                if (!res) {
+                        decon_err("failed to get platform resource\n");
+                        return -EINVAL;
+                }
+                ret = devm_request_irq(dev, res->start, decon_int_irq_handler,
+                                0, pdev->name, decon);
+                if (ret) {
+                        decon_err("failed to install FRAMEDONE irq\n");
+                        return ret;
+                }
+        }
+
 
 	if (underrun_filter_status++ == UNDERRUN_FILTER_INIT)
 		INIT_DELAYED_WORK(&underrun_filter_work,
