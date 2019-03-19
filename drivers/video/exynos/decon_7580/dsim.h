@@ -50,7 +50,7 @@
 	} while (0)
 
 #define call_panel_ops(q, op, args...)				\
-	(((q)->panel_ops->op) ? ((q)->panel_ops->op(args)) : 0)
+        (((q)->panel_ops->op) ? ((q)->panel_ops->op(args)) : 0)
 
 extern struct dsim_device *dsim0_for_decon;
 extern struct dsim_device *dsim1_for_decon;
@@ -94,6 +94,7 @@ struct panel_private {
 
 struct dsim_device {
 	struct device *dev;
+        void *decon;
 	struct dsim_resources res;
 	unsigned int irq;
 	void __iomem *reg_base;
@@ -130,6 +131,10 @@ struct dsim_device {
 	struct regulator *lcd_vdd;
 	struct regulator *lcd_vdd_2;
 	struct panel_private priv;
+#ifdef CONFIG_LCD_DOZE_MODE
+        unsigned int doze_state;
+#endif
+
 };
 
 /**
@@ -146,7 +151,13 @@ struct mipi_dsim_lcd_driver {
 	int	(*suspend)(struct dsim_device *dsim);
 	int	(*displayon)(struct dsim_device *dsim);
 	int	(*resume)(struct dsim_device *dsim);
+	int	(*testvsync) (struct dsim_device *dsim);
 	int	(*display_lvds_init)(struct dsim_device *dsim);
+#ifdef CONFIG_LCD_DOZE_MODE
+        int     (*enteralpm)(struct dsim_device *dsim);
+        int     (*exitalpm)(struct dsim_device *dsim);
+#endif
+
 };
 
 int dsim_write_data(struct dsim_device *dsim, unsigned int data_id,
@@ -221,5 +232,15 @@ u32 dsim_reg_get_hozval(u32 id);
 #define DSIM_IOC_SET_PORCH		_IOW('D', 7, struct decon_lcd *)
 #define DSIM_IOC_DUMP			_IOW('D', 8, u32)
 #define DSIM_IOC_VSYNC			_IOW('D', 9, u32)
+
+enum dsim_pwr_mode {
+        DSIM_REQ_POWER_OFF = 0,
+        DSIM_REQ_POWER_ON,
+#ifdef CONFIG_LCD_DOZE_MODE
+        DSIM_REQ_DOZE_MODE,
+        DSIM_REQ_DOZE_SUSPEND
+#endif
+};
+
 
 #endif /* __DSIM_H__ */

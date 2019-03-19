@@ -78,6 +78,9 @@ extern int decon_log_level;
 #define DECON_LOG_LEVEL_INFO		6
 #define DECON_LOG_LEVEL_DBG		7
 
+#define MAX_FRM_DONE_WAIT       34
+
+
 #define DECON_UNDERRUN_THRESHOLD	300
 
 #ifdef CONFIG_FB_WINDOW_UPDATE
@@ -710,6 +713,14 @@ struct decon_device {
 	atomic_t			disp_ss_log_idx;
 	u32				disp_ss_log_unmask;
 #endif
+
+#ifdef CONFIG_LCD_DOZE_MODE
+        unsigned int                    doze_state;
+        unsigned int                    pwr_mode;
+#endif
+
+
+
 #ifdef CONFIG_DECON_USE_BOOTLOADER_FB
 	struct disp_bootloader_fb_info	bl_fb_info;
 #endif
@@ -897,5 +908,23 @@ static inline bool is_any_pending_frames(struct decon_device *decon)
 
 #define DECON_IOC_LPD_EXIT_LOCK		_IOW('L', 0, u32)
 #define DECON_IOC_LPD_UNLOCK		_IOW('L', 1, u32)
+
+#define S3CFB_POWER_MODE		_IOW('F', 223, __u32)
+
+enum decon_pwr_mode {
+        DECON_POWER_MODE_OFF = 0,
+        DECON_POWER_MODE_DOZE,
+        DECON_POWER_MODE_NORMAL,
+        DECON_POWER_MODE_DOZE_SUSPEND
+};
+
+enum doze_state {
+        DOZE_STATE_NORMAL = 0,
+        DOZE_STATE_DOZE,
+        DOZE_STATE_SUSPEND,
+        DOZE_STATE_DOZE_SUSPEND
+};
+
+#define IS_DOZE(doze_state)             (doze_state == DOZE_STATE_DOZE || doze_state == DOZE_STATE_DOZE_SUSPEND)
 
 #endif /* ___SAMSUNG_DECON_H__ */

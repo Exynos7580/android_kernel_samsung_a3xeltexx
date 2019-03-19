@@ -46,6 +46,7 @@
 #include "dpu_common.h"
 #include "regs-dpu.h"
 #include "panels/dsim_panel.h"
+#include "decon_notify.h"
 
 #include "../../../staging/android/sw_sync.h"
 
@@ -753,11 +754,11 @@ static void decon_wait_for_framedone(struct decon_device *decon)
 	int ret;
 	s64 time_ms = ktime_to_ms(ktime_get()) - ktime_to_ms(decon->trig_mask_timestamp);
 
-	if (time_ms < 17) {
+	if (time_ms < MAX_FRM_DONE_WAIT) {
 		DISP_SS_EVENT_LOG(DISP_EVT_DECON_FRAMEDONE_WAIT, &decon->sd, ktime_set(0, 0));
 		ret = wait_event_interruptible_timeout(decon->wait_frmdone,
 			(decon->frame_done_cnt_target <= decon->frame_done_cnt_cur),
-		msecs_to_jiffies(17 - time_ms));
+		msecs_to_jiffies(MAX_FRM_DONE_WAIT - time_ms));
 	}
 }
 
@@ -890,6 +891,39 @@ static void decon_esd_disable_interrupt(struct decon_device *decon)
 	return;
 }
 
+static int decon_reg_set_regs_data_init(struct fb_info *info)
+{
+	struct fb_var_screeninfo *var = &info->var;
+	struct decon_win *win = info->par;
+	struct decon_device *decon = win->decon;
+	int win_no = decon->pdata->default_win;
+	struct decon_regs_data win_regs;
+
+	memset(&win_regs, 0, sizeof(struct decon_regs_data));
+
+	win_regs.wincon = WINCON_ENWIN;
+	win_regs.wincon |= wincon(var->bits_per_pixel, var->transp.length, WINCON_BPPMODE_ARGB8888);
+	win_regs.winmap = WIN_MAP_MAP | WIN_MAP_MAP_COLOUR(0);;
+	win_regs.vidosd_a = vidosd_a(0, 0);
+	win_regs.vidosd_b = vidosd_b(0, 0, var->xres, var->yres);
+	win_regs.vidosd_c = vidosd_c(0x0, 0x0, 0x0);
+	win_regs.vidosd_d = vidosd_d(0xff, 0xff, 0xff);
+	win_regs.vidw_buf_start = info->fix.smem_start;
+	win_regs.vidw_whole_w = var->xres;
+	win_regs.vidw_whole_h = var->yres;
+	win_regs.vidw_offset_x = 0;
+	win_regs.vidw_offset_y = 0;
+	win_regs.type = IDMA_G0;
+
+	decon_reg_shadow_protect_win(DECON_INT, win_no, 1);
+	decon_reg_set_regs_data(DECON_INT, win_no, &win_regs);
+	decon_reg_shadow_protect_win(DECON_INT, win_no, 0);
+	decon_reg_update_standalone(DECON_INT);
+
+	return 0;
+}
+
+
 /* ---------- FB_BLANK INTERFACE ----------- */
 int decon_enable(struct decon_device *decon)
 {
@@ -897,6 +931,18 @@ int decon_enable(struct decon_device *decon)
 	struct decon_init_param p;
 	int state = decon->state;
 	int ret = 0;
+
+#ifdef CONFIG_LCD_DOZE_MODE
+        int is_lcd_on = 0;
+        struct dsim_device *dsim = NULL;
+
+        if (decon->out_type == DECON_OUT_DSI)
+                dsim = container_of(decon->output_sd, struct dsim_device, sd);
+
+        if (decon->state != DECON_STATE_LPD_EXIT_REQ)
+                is_lcd_on = 1;
+#endif
+
 
 	decon_dbg("enable decon-%s\n", "int");
 	exynos_ss_printk("%s:state %d: active %d:+\n", __func__,
@@ -911,8 +957,27 @@ int decon_enable(struct decon_device *decon)
 		goto err;
 	}
 
+	if (decon->state != DECON_STATE_LPD_EXIT_REQ)
+		flush_kthread_worker(&decon->update_regs_worker);
+
 	if (decon->state == DECON_STATE_ON) {
 		decon_warn("decon already enabled\n");
+#ifdef CONFIG_LCD_DOZE_MODE
+                if (is_lcd_on) {
+                        decon_info("%s: doze_state: %d\n", __func__, decon->doze_state);
+                        if (IS_DOZE(decon->doze_state)) {
+                                ret = v4l2_subdev_call(decon->output_sd, video, s_stream, DSIM_REQ_POWER_ON);
+                                if (ret) {
+                                        decon_err("starting stream failed for %s\n",
+                                                        decon->output_sd->name);
+                                        goto err;
+                                }
+                                call_panel_ops(dsim, displayon, dsim);
+                                decon->doze_state = DOZE_STATE_NORMAL;
+                        }
+                }
+#endif
+
 		goto err;
 	}
 
@@ -966,7 +1031,8 @@ int decon_enable(struct decon_device *decon)
 	decon_to_psr_info(decon, &psr);
 	if (decon->state != DECON_STATE_LPD_EXIT_REQ) {
 	/* In case of resume*/
-		if (decon->out_type == DECON_OUT_DSI)
+		if (decon->out_type == DECON_OUT_DSI) {
+			decon_reg_set_regs_data_init(decon->windows[decon->pdata->default_win]->fbinfo);
 			decon_reg_start(DECON_INT,
 					decon->pdata->dsi_mode, &psr);
 #ifdef CONFIG_DECON_MIPI_DSI_PKTGO
@@ -975,6 +1041,7 @@ int decon_enable(struct decon_device *decon)
 		if (ret)
 			decon_err("Failed to call DSIM packet go enable!\n");
 #endif
+		}
 	}
 
 #ifdef CONFIG_FB_WINDOW_UPDATE
@@ -990,6 +1057,10 @@ int decon_enable(struct decon_device *decon)
 		}
 	}
 #endif
+        if (state != DECON_STATE_LPD_EXIT_REQ)
+                decon_esd_enable_interrupt(decon);
+
+
 	if (decon->pdata->psr_mode != DECON_VIDEO_MODE) {
 		if (!decon->eint_en_status) {
 			enable_irq(decon->irq);
@@ -997,12 +1068,24 @@ int decon_enable(struct decon_device *decon)
 		}
 
 		decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 1);
+	} else {
+		if (decon->vsync_info.irq_refcount)
+			decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 1);
 	}
 
 	decon->state = DECON_STATE_ON;
 
-	if (state != DECON_STATE_LPD_EXIT_REQ)
-		decon_esd_enable_interrupt(decon);
+#ifdef CONFIG_LCD_DOZE_MODE
+        if (is_lcd_on) {
+                decon_info("%s: doze_state: %d\n", __func__, decon->doze_state);
+                if (IS_DOZE(decon->doze_state)) {
+                        call_panel_ops(dsim, displayon, dsim);
+                }
+                decon->doze_state = DOZE_STATE_NORMAL;
+        }
+#endif
+
+
 err:
 	exynos_ss_printk("%s:state %d: active %d:-\n", __func__,
 				decon->state, pm_runtime_active(decon->dev));
@@ -1017,6 +1100,14 @@ int decon_disable(struct decon_device *decon)
 	int ret = 0;
 	unsigned long irq_flags;
 	int state = decon->state;
+
+#ifdef CONFIG_LCD_DOZE_MODE
+        int is_lcd_off = 0;
+
+        if (decon->state != DECON_STATE_LPD_EXIT_REQ)
+                is_lcd_off = 1;
+#endif
+
 
 	exynos_ss_printk("disable decon-%s, state(%d) cnt %d\n", "int",
 				decon->state, pm_runtime_active(decon->dev));
@@ -1085,11 +1176,15 @@ int decon_disable(struct decon_device *decon)
 	if (state == DECON_STATE_LPD_ENT_REQ)
 		decon->state = DECON_STATE_LPD;
 	spin_unlock_irqrestore(&decon->slock, irq_flags);
+
+
+/*
 #if defined(CONFIG_PM_RUNTIME)
 	pm_runtime_put_sync(decon->dev);
 #else
 	decon_runtime_suspend(decon->dev);
 #endif
+*/
 
 	if (state == DECON_STATE_LPD_ENT_REQ) {
 		ret = v4l2_subdev_call(decon->output_sd, core, ioctl,
@@ -1100,7 +1195,8 @@ int decon_disable(struct decon_device *decon)
 			goto err;
 		}
 		decon->state = DECON_STATE_LPD;
-	} else if (decon->out_type == DECON_OUT_DSI) {
+	} else {
+		if (decon->out_type == DECON_OUT_DSI) {
 		if (decon->pdata->psr_mode != DECON_VIDEO_MODE) {
 			/* stop output device (mipi-dsi) */
 			ret = v4l2_subdev_call(decon->output_sd, video, s_stream, 0);
@@ -1114,10 +1210,23 @@ int decon_disable(struct decon_device *decon)
 		pm_relax(decon->dev);
 		dev_dbg(decon->dev, "pm_relax");
 
-		decon->state = DECON_STATE_OFF;
-	}
 
+		}
+		decon->state = DECON_STATE_OFF;
+#ifdef CONFIG_LCD_DOZE_MODE
+                if (is_lcd_off)
+                        decon->doze_state = DOZE_STATE_SUSPEND;
+#endif
+
+	}
 	decon_set_qos(decon, NULL, true, true);
+
+#if defined(CONFIG_PM_RUNTIME)
+	pm_runtime_put_sync(decon->dev);
+#else
+	decon_runtime_suspend(decon->dev);
+#endif
+
 err:
 	exynos_ss_printk("%s:state %d: active%d:-\n", __func__,
 				decon->state, pm_runtime_active(decon->dev));
@@ -1125,6 +1234,35 @@ err:
 		mutex_unlock(&decon->output_lock);
 	return ret;
 }
+
+
+static void decon_deactivate_vsync(struct decon_device *decon)
+{
+        struct decon_psr_info psr;
+        int new_refcount, ret;
+
+        mutex_lock(&decon->vsync_info.irq_lock);
+
+        new_refcount = --decon->vsync_info.irq_refcount;
+        WARN_ON(new_refcount < 0);
+        if (!new_refcount) {
+                if (decon->pdata->psr_mode == DECON_VIDEO_MODE) {
+                        decon_to_psr_info(decon, &psr);
+                        decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 0);
+                        ret = v4l2_subdev_call(decon->output_sd, core, ioctl,
+                                        DSIM_IOC_VSYNC, (unsigned long *)0);
+                        if (ret)
+                                decon_err("%s: failed to disable dsim vsync int %s\n",
+                                                __func__, decon->output_sd->name);
+                }
+                DISP_SS_EVENT_LOG(DISP_EVT_DEACT_VSYNC, &decon->sd, ktime_set(0, 0));
+        }
+
+        mutex_unlock(&decon->vsync_info.irq_lock);
+}
+
+
+
 
 static int decon_blank(int blank_mode, struct fb_info *info)
 {
@@ -1193,31 +1331,6 @@ static void decon_activate_vsync(struct decon_device *decon)
 						__func__, decon->output_sd->name);
 		}
 		DISP_SS_EVENT_LOG(DISP_EVT_ACT_VSYNC, &decon->sd, ktime_set(0, 0));
-	}
-
-	mutex_unlock(&decon->vsync_info.irq_lock);
-}
-
-static void decon_deactivate_vsync(struct decon_device *decon)
-{
-	struct decon_psr_info psr;
-	int new_refcount, ret;
-
-	mutex_lock(&decon->vsync_info.irq_lock);
-
-	new_refcount = --decon->vsync_info.irq_refcount;
-	WARN_ON(new_refcount < 0);
-	if (!new_refcount) {
-		if (decon->pdata->psr_mode == DECON_VIDEO_MODE) {
-			decon_to_psr_info(decon, &psr);
-			decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 0);
-			ret = v4l2_subdev_call(decon->output_sd, core, ioctl,
-					DSIM_IOC_VSYNC, (unsigned long *)0);
-			if (ret)
-				decon_err("%s: failed to disable dsim vsync int %s\n",
-						__func__, decon->output_sd->name);
-		}
-		DISP_SS_EVENT_LOG(DISP_EVT_DEACT_VSYNC, &decon->sd, ktime_set(0, 0));
 	}
 
 	mutex_unlock(&decon->vsync_info.irq_lock);
@@ -1782,10 +1895,16 @@ static void decon_set_win_update_config(struct decon_device *decon,
 	struct decon_rect r1, r2;
 	struct decon_lcd *lcd_info = decon->lcd_info;
 
-	if (decon->out_type == DECON_OUT_DSI) {
-		if (decon->force_fullupdate)
+
+#ifdef CONFIG_LCD_DOZE_MODE
+        if ((decon->out_type == DECON_OUT_DSI) &&
+                (decon->doze_state == DOZE_STATE_DOZE)) {
+                memset(update_config, 0, sizeof(struct decon_win_config));
+        }
+#endif
+
+	if (decon->force_fullupdate)
 			memset(update_config, 0, sizeof(struct decon_win_config));
-	}
 
 	decon_calibrate_win_update_size(decon, win_config, update_config);
 
@@ -1979,7 +2098,7 @@ static void __decon_update_regs(struct decon_device *decon, struct decon_reg_dat
 
 static void decon_fence_wait(struct sync_fence *fence)
 {
-	int err = sync_fence_wait(fence, 900);
+	int err = sync_fence_wait(fence, 3500);
 	if (err >= 0)
 		return;
 
@@ -1994,7 +2113,7 @@ void decon_set_qos(struct decon_device *decon, struct decon_reg_data *regs,
 	u64 req_bandwidth;
 
 	req_bandwidth = regs ? (is_default_qos ? 0 : regs->bandwidth) :
-			(decon->max_win_bw * 3);
+			(decon->max_win_bw * decon->pdata->max_win);
 
 	if (decon->prev_bw == req_bandwidth)
 		return;
@@ -2227,6 +2346,27 @@ static int decon_set_win_config(struct decon_device *decon,
 		goto err;
 	}
 
+#ifdef CONFIG_LCD_DOZE_MODE
+        if ((decon->out_type == DECON_OUT_DSI) &&
+                (decon->doze_state == DOZE_STATE_DOZE)) {
+                for (i = 0; i < decon->pdata->max_win && !ret; i++) {
+                        struct decon_win_config *config = &win_config[i];
+                        if (config->state != DECON_WIN_STATE_DISABLED) {
+                                goto windows_config;
+                        }
+                }
+                decon->timeline_max++;
+                pt = sw_sync_pt_create(decon->timeline, decon->timeline_max);
+                fence = sync_fence_create("display", pt);
+                sync_fence_install(fence, fd);
+                win_data->fence = fd;
+
+                sw_sync_timeline_inc(decon->timeline, 1);
+                goto err;
+        }
+windows_config:
+#endif
+
 	regs = kzalloc(sizeof(struct decon_reg_data), GFP_KERNEL);
 	if (!regs) {
 		decon_err("could not allocate decon_reg_data\n");
@@ -2369,6 +2509,208 @@ static ssize_t decon_fb_write(struct fb_info *info, const char __user *buf,
 	return 0;
 }
 
+#ifdef CONFIG_LCD_DOZE_MODE
+int decon_doze_enable(struct decon_device *decon)
+{
+	struct decon_psr_info psr;
+	struct decon_init_param p;
+	int state = decon->state;
+	int ret = 0;
+	struct dsim_device *dsim = container_of(decon->output_sd, struct dsim_device, sd);
+
+	decon_info("%s: ++ %d, %d\n", __func__, decon->state, decon->doze_state);
+	exynos_ss_printk("%s:state %d: active %d:+\n", __func__,
+				decon->state, pm_runtime_active(decon->dev));
+
+	mutex_lock(&decon->output_lock);
+
+	if (decon->state == DECON_STATE_ON) {
+		if (decon->doze_state != DOZE_STATE_DOZE) {
+			ret = v4l2_subdev_call(decon->output_sd, video, s_stream, DSIM_REQ_DOZE_MODE);
+			if (ret) {
+				decon_err("starting stream failed for %s\n", decon->output_sd->name);
+				goto err;
+			}
+			decon->doze_state = DOZE_STATE_DOZE;
+		}
+		goto err;
+	}
+
+	decon->prev_bw = 0;
+	/* set bandwidth to default (3 full frame) */
+	decon_set_qos(decon, NULL, false, false);
+
+	/* disable idle status for display */
+	//exynos_update_ip_idle_status(decon->idle_ip_index, 0);
+
+#if defined(CONFIG_PM_RUNTIME)
+	pm_runtime_get_sync(decon->dev);
+#else
+	decon_runtime_resume(decon->dev);
+#endif
+
+	if (decon->out_type == DECON_OUT_DSI) {
+		decon->force_fullupdate = 0;
+		pm_stay_awake(decon->dev);
+		dev_warn(decon->dev, "pm_stay_awake");
+		ret = v4l2_subdev_call(decon->output_sd, video, s_stream, DSIM_REQ_DOZE_MODE);
+		if (ret) {
+			decon_err("starting stream failed for %s\n",
+					decon->output_sd->name);
+			goto err;
+		}
+	}
+
+	ret = iovmm_activate(decon->dev);
+	if (ret < 0) {
+		decon_err("failed to reactivate vmm\n");
+		goto err;
+	}
+	ret = 0;
+
+	decon_to_init_param(decon, &p);
+	decon_reg_init(DECON_INT, decon->pdata->dsi_mode, &p);
+	decon_enable_eclk_idle_gate(DECON_INT, DECON_ECLK_IDLE_GATE_ENABLE);
+
+	decon_to_psr_info(decon, &psr);
+	/* In case of resume*/
+	if (!IS_DOZE(decon->doze_state)) {
+			decon_reg_set_regs_data_init(decon->windows[decon->pdata->default_win]->fbinfo);
+			decon_reg_start(DECON_INT,
+					decon->pdata->dsi_mode, &psr);
+#ifdef CONFIG_DECON_MIPI_DSI_PKTGO
+		ret = v4l2_subdev_call(decon->output_sd, core,
+				ioctl, DSIM_IOC_PKT_GO_ENABLE, NULL);
+		if (ret)
+			decon_err("Failed to call DSIM packet go enable!\n");
+#endif
+	}
+
+#ifdef CONFIG_FB_WINDOW_UPDATE
+	if (decon->need_update) {
+		decon->need_update = false;
+		decon->update_win.x = 0;
+		decon->update_win.y = 0;
+		decon->update_win.w = decon->lcd_info->xres;
+		decon->update_win.h = decon->lcd_info->yres;
+	}
+#endif
+
+	if (decon->pdata->psr_mode != DECON_VIDEO_MODE) {
+		if (!decon->eint_en_status) {
+			enable_irq(decon->irq);
+			decon->eint_en_status = true;
+		}
+
+		decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 1);
+	}
+
+        decon->state = DECON_STATE_ON;
+        decon->doze_state = DOZE_STATE_DOZE;
+        call_panel_ops(dsim, displayon, dsim);
+
+        if (state != DECON_STATE_LPD_ENT_REQ)
+                decon_esd_enable_interrupt(decon);
+
+err:
+	exynos_ss_printk("%s:state %d: active %d:-\n", __func__,
+				decon->state, pm_runtime_active(decon->dev));
+
+	mutex_unlock(&decon->output_lock);
+	decon_info("%s: --\n", __func__);
+	return ret;
+}
+
+int decon_doze_suspend(struct decon_device *decon)
+{
+	struct decon_psr_info psr;
+	int ret = 0;
+
+	decon_info("%s: -- %d, %d\n", __func__, decon->state, decon->doze_state);
+	exynos_ss_printk("disable decon-%s, state(%d) cnt %d\n", "int",
+				decon->state, pm_runtime_active(decon->dev));
+
+	if (decon->out_type == DECON_OUT_TUI)
+		decon_tui_protection(decon, false);
+
+	if (decon->state != DECON_STATE_LPD_ENT_REQ) {
+		decon_esd_disable_interrupt(decon);
+		if (decon->esd.esd_wq)
+			flush_workqueue(decon->esd.esd_wq);
+	}
+
+	if (decon->state != DECON_STATE_LPD_ENT_REQ)
+		mutex_lock(&decon->output_lock);
+
+	if (decon->state == DECON_STATE_OFF) {
+		decon_info("decon already disabled\n");
+		ret = -EEXIST;
+		goto err;
+	}
+
+	flush_kthread_worker(&decon->update_regs_worker);
+
+	if (decon->pdata->psr_mode != DECON_VIDEO_MODE) {
+		decon_reg_set_int(DECON_INT, &psr, DSI_MODE_SINGLE, 0);
+
+		if ((decon->vsync_info.irq_refcount <= 0) &&
+			decon->eint_en_status) {
+			disable_irq(decon->irq);
+			decon->eint_en_status = false;
+		}
+	}
+
+	if (decon->out_type == DECON_OUT_DSI && decon->pdata->psr_mode == DECON_VIDEO_MODE) {
+		/* stop output device (mipi-dsi) */
+		ret = v4l2_subdev_call(decon->output_sd, video, s_stream, 0);
+		if (ret)
+			decon_err("stopping stream failed for %s\n", decon->output_sd->name);
+	}
+
+	decon_to_psr_info(decon, &psr);
+	decon_reg_stop(DECON_INT, decon->pdata->dsi_mode, &psr);
+	decon_reg_clear_int(DECON_INT);
+	decon_set_protected_content(decon, false);
+	decon_enable_eclk_idle_gate(DECON_INT, DECON_ECLK_IDLE_GATE_DISABLE);
+	iovmm_deactivate(decon->dev);
+
+#if defined(CONFIG_PM_RUNTIME)
+	pm_runtime_put_sync(decon->dev);
+#else
+	decon_runtime_suspend(decon->dev);
+#endif
+
+	if (decon->out_type == DECON_OUT_DSI) {
+		if (decon->pdata->psr_mode != DECON_VIDEO_MODE) {
+			/* stop output device (mipi-dsi) */
+			ret = v4l2_subdev_call(decon->output_sd, video, s_stream, DSIM_REQ_DOZE_SUSPEND);
+			if (ret) {
+				decon_err("stopping stream failed for %s\n",
+						decon->output_sd->name);
+				goto err;
+			}
+		}
+
+		pm_relax(decon->dev);
+		dev_dbg(decon->dev, "pm_relax");
+
+		decon->state = DECON_STATE_OFF;
+		decon->doze_state = DOZE_STATE_DOZE_SUSPEND;
+
+	}
+
+	decon_set_qos(decon, NULL, true, true);
+
+err:
+	exynos_ss_printk("%s:state %d: active%d:-\n", __func__,
+				decon->state, pm_runtime_active(decon->dev));
+
+	mutex_unlock(&decon->output_lock);
+	decon_info("%s: --\n", __func__);
+	return ret;
+}
+#endif
+
 static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -2377,6 +2719,16 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 	struct decon_win_config_data win_data = { 0 };
 	int ret = 0;
 	u32 crtc;
+        struct fb_event v;
+        int blank = 0;
+
+        v.info = info;
+        v.data = &blank;
+#ifdef CONFIG_LCD_DOZE_MODE
+        u32 pwr_mode;
+#endif
+
+
 
 	/* enable lpd only when system is ready to interact with driver */
 	decon_lpd_enable();
@@ -2467,6 +2819,41 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 			break;
 		}
 		break;
+#ifdef CONFIG_LCD_DOZE_MODE
+	case S3CFB_POWER_MODE:
+                if (get_user(decon->pwr_mode, (int __user *)arg)) {
+                        ret = -EFAULT;
+                        break;
+                }
+                switch (decon->pwr_mode) {
+
+		case DECON_POWER_MODE_DOZE:
+			decon_info("%s: DECON_POWER_MODE_DOZE\n", __func__);
+			ret = decon_doze_enable(decon);
+			if (ret) {
+				decon_err("%s: failed to decon_doze_enable: %d\n", __func__, ret);
+				ret = 0;
+			}
+			blank = FB_BLANK_UNBLANK;
+			decon_notifier_call_chain(FB_EVENT_BLANK, &v);
+			break;
+		case DECON_POWER_MODE_DOZE_SUSPEND:
+			decon_info("%s: DECON_POWER_MODE_DOZE_SUSPEND\n", __func__);
+			ret = decon_doze_suspend(decon);
+			if (ret) {
+				decon_err("%s: failed to decon_doze_suspend: %d\n", __func__, ret);
+				ret = 0;
+			}
+			blank = FB_BLANK_POWERDOWN;
+			decon_notifier_call_chain(FB_EVENT_BLANK, &v);
+			break;
+		default:
+			decon_info("%s: pwr_mode: %d\n", __func__, decon->pwr_mode);
+			ret = 0;
+			break;
+		}
+		break;
+#endif
 
 	default:
 		ret = -ENOTTY;
@@ -4632,6 +5019,10 @@ static int decon_probe(struct platform_device *pdev)
 	decon_runtime_resume(decon->dev);
 #endif
 
+        dsim = container_of(decon->output_sd, struct dsim_device, sd);
+        dsim->decon = (void *)decon;
+
+
 	/* DECON does not need to start, if DECON is already
 	 * running(enabled in LCD_ON_UBOOT) */
 	if (decon_reg_get_stop_status(DECON_INT)) {
@@ -4711,6 +5102,7 @@ static int decon_probe(struct platform_device *pdev)
 				decon->pdata->trig_mode, DECON_TRIG_ENABLE);
 
 	dsim = container_of(decon->output_sd, struct dsim_device, sd);
+
 	call_panel_ops(dsim, displayon, dsim);
 
 decon_init_done:
@@ -4849,16 +5241,13 @@ static void decon_shutdown(struct platform_device *pdev)
 
 	decon_info("+ %s \n", __func__);
 
+        decon_lpd_block_exit(decon);
+        /* Unused DECON state is DECON_STATE_INIT */
+        if (decon->state == DECON_STATE_ON)
+                decon_disable(decon);
 
-	decon_lpd_block_exit(decon);
+        decon_lpd_unblock(decon);
 
-	if (decon->state != DECON_STATE_OFF) {
-		disable_irq(decon->irq);
-		ret = decon_disable(decon);
-		if (ret) {
-			dsim_err("%s : failed to decon_disable\n", __func__);
-		}
-	}
 
 	decon_info("+ %s\n", __func__);
 	return;

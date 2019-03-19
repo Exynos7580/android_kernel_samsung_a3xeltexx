@@ -114,5 +114,8 @@ void dsim_reg_set_pkt_go_enable(u32 id, bool en);
 void dsim_reg_set_pkt_go_ready(u32 id);
 void dsim_reg_set_pkt_go_cnt(u32 id, unsigned int count);
 void dsim_reg_set_shadow(u32 id, u32 en);
+void dsim_reg_start(u32 id, struct decon_lcd *lcd, u32 lanes);
+void dsim_reg_stop(u32 id, struct decon_lcd *lcd, u32 lanes);
+
 
 #endif /* _DSIM_COMMON_H_ */

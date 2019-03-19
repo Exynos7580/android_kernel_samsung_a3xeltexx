@@ -12,6 +12,11 @@ config PANEL_AID_DIMMING
 	tristate "Support AID Dimming"
 	default n
 
+config LCD_DOZE_MODE
+        depends on EXYNOS_DECON_LCD
+        tristate "Support DOZE MODE"
+        default n
+
 config EXYNOS_DECON_MDNIE_LITE
 	depends on EXYNOS_DECON_LCD
 	tristate "Support MDNIE LITE"

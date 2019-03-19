@@ -19,16 +19,16 @@
 #endif
 
 /* These definitions are need to guide from AP team */
-#define DSIM_STOP_STATE_CNT		0x7ff
-#define DSIM_BTA_TIMEOUT		0xff
-#define DSIM_LP_RX_TIMEOUT		0xffff
-#define DSIM_MULTI_PACKET_CNT		0xffff
-#define DSIM_PLL_STABLE_TIME		22200
+#define DSIM_STOP_STATE_CNT             0x7ff
+#define DSIM_BTA_TIMEOUT                0xff
+#define DSIM_LP_RX_TIMEOUT              0xffff
+#define DSIM_MULTI_PACKET_CNT           0xffff
+#define DSIM_PLL_STABLE_TIME            22200
 
 /* If below values depend on panel. These values wil be move to panel file.
  * And these values are valid in case of video mode only. */
-#define DSIM_CMD_ALLOW_VALUE		4
-#define DSIM_STABLE_VFP_VALUE		2
+#define DSIM_CMD_ALLOW_VALUE            4
+#define DSIM_STABLE_VFP_VALUE           2
 
 /* DPHY timing table */
 const u32 dphy_timing[][10] = {
@@ -1132,3 +1132,28 @@ u32 dsim_reg_get_hozval(u32 id)
 	u32 val = dsim_read(id, DSIM_MDRESOL);
 	return DSIM_MDRESOL_HOZVAL_GET(val);
 }
+
+/* Set clocks and lanes and HS ready */
+void dsim_reg_start(u32 id, struct decon_lcd *lcd, u32 lanes)
+{
+        dsim_reg_set_hs_clock(id, lcd, 1);
+        dsim_reg_set_standby(id, lcd , 1);
+        dsim_reg_set_int(id, 1);
+}
+
+/* Unset clocks and lanes and stop_state */
+void dsim_reg_stop(u32 id, struct decon_lcd *lcd, u32 lanes)
+{
+        /* disable interrupts */
+        dsim_reg_set_int(id, 0);
+
+        /* unset standby and disable HS clock */
+        dsim_reg_set_standby(id, lcd, 0);
+        dsim_reg_set_hs_clock(id, lcd, 0);
+        dsim_reg_set_lanes(id, lanes, 0);
+        dsim_reg_set_esc_clk_on_lane(id, 0, lanes);
+        dsim_reg_set_byte_clock(id, 0);
+        dsim_reg_set_clocks(id, NULL, lanes, 0);
+        dsim_reg_sw_reset(id);
+}
+
