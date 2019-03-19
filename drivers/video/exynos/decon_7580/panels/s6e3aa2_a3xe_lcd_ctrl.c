@@ -224,28 +224,6 @@ try_read:
 	return ret;
 }
 
-
-#if defined(CONFIG_EXYNOS_DECON_MDNIE_LITE) || defined(CONFIG_LCD_DOZE_MODE)
-static int dsim_write_set(struct lcd_info *lcd, struct lcd_seq_info *seq, u32 num)
-{
-        int ret = 0, i;
-
-        for (i = 0; i < num; i++) {
-                if (seq[i].cmd) {
-                        ret = dsim_write_hl_data(lcd, seq[i].cmd, seq[i].len);
-                        if (ret != 0) {
-                                dev_info(&lcd->ld->dev, "%s: %dth fail\n", __func__, i);
-                                return ret;
-                        }
-                }
-                if (seq[i].sleep)
-                        usleep_range(seq[i].sleep * 1000, seq[i].sleep * 1000);
-        }
-        return ret;
-}
-#endif
-
-
 static int dsim_read_hl_data_offset(struct lcd_info *lcd, u8 addr, u32 size, u8 *buf, u32 offset)
 {
 	unsigned char wbuf[] = {0xB0, 0};
@@ -383,20 +361,6 @@ exit:
 
 }
 
-static int dsim_panel_set_hbm(struct lcd_info *lcd, int force)
-{
-	int ret = 0, level = LEVEL_IS_HBM(lcd->brightness);
-
-	if (force || lcd->current_hbm != lcd->hbm_table[level][LDI_OFFSET_HBM]) {
-		DSI_WRITE(lcd->hbm_table[level], HBM_CMD_CNT);
-		lcd->current_hbm = lcd->hbm_table[level][LDI_OFFSET_HBM];
-		dev_info(&lcd->ld->dev, "hbm: %d, brightness: %d\n", lcd->current_hbm, lcd->brightness);
-	}
-
-exit:
-	return ret;
-}
-
 static int low_level_set_brightness(struct lcd_info *lcd, int force)
 {
 	int ret = 0;
@@ -413,8 +377,6 @@ static int low_level_set_brightness(struct lcd_info *lcd, int force)
 	DSI_WRITE(SEQ_GAMMA_UPDATE, ARRAY_SIZE(SEQ_GAMMA_UPDATE));
 
 	dsim_panel_set_acl(lcd, force);
-
-	//dsim_panel_set_hbm(lcd, force);
 
 	DSI_WRITE(SEQ_TEST_KEY_OFF_F0, ARRAY_SIZE(SEQ_TEST_KEY_OFF_F0));
 	DSI_WRITE(SEQ_TEST_KEY_OFF_FC, ARRAY_SIZE(SEQ_TEST_KEY_OFF_FC));
@@ -798,40 +760,6 @@ exit:
 	return ret;
 }
 
-static int s6e3aa2_read_status(struct lcd_info *lcd)
-{
-	int ret = 0;
-	unsigned char rddpm[LDI_LEN_RDDPM] = {0,};
-	unsigned char rddsm[LDI_LEN_RDDSM] = {0,};
-	unsigned char esderr[LDI_LEN_ESDERR] = {0,};
-
-	DSI_WRITE(SEQ_TEST_KEY_ON_F0, ARRAY_SIZE(SEQ_TEST_KEY_ON_F0));
-
-	ret = s6e3aa2_read_info(lcd, LDI_REG_RDDPM, LDI_LEN_RDDPM, rddpm);
-	if (ret < 0) {
-		dev_err(&lcd->ld->dev, "%s: fail\n", __func__);
-		goto exit;
-	}
-
-	ret = s6e3aa2_read_info(lcd, LDI_REG_RDDSM, LDI_LEN_RDDSM, rddsm);
-	if (ret < 0) {
-		dev_err(&lcd->ld->dev, "%s: fail\n", __func__);
-		goto exit;
-	}
-	ret = s6e3aa2_read_info(lcd, LDI_REG_ESDERR, LDI_LEN_ESDERR, esderr);
-	if (ret < 0) {
-		dev_err(&lcd->ld->dev, "%s: fail\n", __func__);
-		goto exit;
-	}
-
-	dev_info(&lcd->ld->dev, "%s: dpm: %2x dsm: %2x err: %2x\n", __func__, rddpm[0], rddsm[0], esderr[0]);
-
-	DSI_WRITE(SEQ_TEST_KEY_OFF_F0, ARRAY_SIZE(SEQ_TEST_KEY_OFF_F0));
-
-exit:
-	return ret;
-}
-
 static int s6e3aa2_init_hbm_elvss(struct lcd_info *lcd, u8 *elvss_data)
 {
 	int i, temp, ret = 0;
@@ -1147,8 +1075,6 @@ static int s6e3aa2_probe(struct dsim_device *dsim)
 	struct panel_private *priv = &dsim->priv;
 	struct lcd_info *lcd = dsim->priv.par;
 	unsigned char mtp[LDI_LEN_MTP] = {0, };
-	struct device_node *np;
-	struct platform_device *pdev;
 
 	dev_info(&lcd->ld->dev, "%s: was called\n", __func__);
 
@@ -1189,17 +1115,6 @@ static int s6e3aa2_probe(struct dsim_device *dsim)
 exit:
 	return ret;
 }
-
-static int dsim_panel_dump(struct dsim_device *dsim) {
-
-        struct lcd_info *lcd = dsim->priv.par;
-        int ret = 0;
-
-        ret = s6e3aa2_read_status(lcd);
-
-        return ret;
-}
-
 
 #ifdef CONFIG_LCD_DOZE_MODE
 int s6e3aa2_setalpm(struct lcd_info *lcd, int mode)

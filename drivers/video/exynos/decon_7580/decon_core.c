@@ -2724,11 +2724,6 @@ static int decon_ioctl(struct fb_info *info, unsigned int cmd,
 
         v.info = info;
         v.data = &blank;
-#ifdef CONFIG_LCD_DOZE_MODE
-        u32 pwr_mode;
-#endif
-
-
 
 	/* enable lpd only when system is ready to interact with driver */
 	decon_lpd_enable();
@@ -5235,8 +5230,6 @@ static int decon_remove(struct platform_device *pdev)
 
 static void decon_shutdown(struct platform_device *pdev)
 {
-	int ret;
-	//struct device *dev = &pdev->dev;
 	struct decon_device *decon = platform_get_drvdata(pdev);
 
 	decon_info("+ %s \n", __func__);
