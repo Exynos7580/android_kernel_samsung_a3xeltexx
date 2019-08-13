@@ -569,13 +569,6 @@ i2c@33 {
 			pinfunc_on = <2>;
 			pinfunc_off = <0>;
 		};
-		dwc9807_i2c@18 {
-                        compatible = "dongwoon,dw9807-vcm";
-                        reg = <0x18>;
-                        use_i2c_pinctrl;
-                        pinfunc_on = <2>;
-                        pinfunc_off = <0>;
-		};
 	};
 
 	hsi2c@13890000 {
@@ -599,8 +592,6 @@ i2c@33 {
 					regulator-name = "VDDAF_2.8V_CAM";
 					regulator-min-microvolt = <2800000>;
 					regulator-max-microvolt = <2800000>;
-                                        regulator-always-on;
-                                        regulator-boot-on;
 				};
 			};
 
@@ -1285,22 +1276,22 @@ i2c@33 {
 			samsung,pins = "gpd2-4";
 			samsung,pin-function = <0xf>;
 		};
-                disp_pcd_off: disp_pcd_off {
-                        samsung,pins = "gpd2-4";
-                        samsung,pin-function = <0>;
-                };
-        };
+		disp_pcd_off: disp_pcd_off {
+			samsung,pins = "gpd2-4";
+			samsung,pin-function = <0>;
+		};
+	};
 
-        s6e3aa2: s6e3aa2_hd {
-                mode = <2>;
-                resolution = <720 1280>;
-                size = <59 105>;
-                timing,refresh = <60>;
-                timing,h-porch = <1 1 1>;
-                timing,v-porch = <10 3 1>;
-                timing,dsi-hs-clk = <489>;
-                timing,dsi-escape-clk = <16>;
-                mic = <0>;
+	s6e3aa2: s6e3aa2_hd {
+		mode = <2>;
+		resolution = <720 1280>;
+		size = <59 105>;
+		timing,refresh = <60>;
+		timing,h-porch = <1 1 1>;
+		timing,v-porch = <12 1 1>;
+		timing,dsi-hs-clk = <500>;
+		timing,dsi-escape-clk = <16>;
+		mic = <0>;
 
 		pinctrl-names = "off", "on";
 		pinctrl-0 = <&disp_pcd_off>;

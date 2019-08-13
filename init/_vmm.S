@@ -19,7 +19,7 @@
 
 #include <linux/vmm.h>
 
-#define vmm_ELF_PATH "/home/compute.kvant/los/kernel/samsung/exynos7580-common/init/vmm.elf"
+#define vmm_ELF_PATH "/mnt/disk/android/lineage/kernel/samsung/exynos7580-common/init/vmm.elf"
 
 
 #define SMC_64BIT_RET_MAGIC 0xC2000401

@@ -42,13 +42,13 @@
 
 static struct fimc_is_sensor_cfg config_3l2[] = {
 	/* 4144x3106@30fps */
-	FIMC_IS_SENSOR_CFG(4144, 3106, 30, 25, 0),
+	FIMC_IS_SENSOR_CFG(4144, 3106, 30, 24, 0),
 	/* 4144x2332@30fps */
-	FIMC_IS_SENSOR_CFG(4144, 2332, 30, 25, 1),
+	FIMC_IS_SENSOR_CFG(4144, 2332, 30, 24, 1),
 	/* 4128x3096@30fps */
-	FIMC_IS_SENSOR_CFG(4128, 3096, 30, 25, 2),
+	FIMC_IS_SENSOR_CFG(4128, 3096, 30, 24, 2),
 	/* 4128x2322@30fps */
-	FIMC_IS_SENSOR_CFG(4128, 2322, 30, 25, 3),
+	FIMC_IS_SENSOR_CFG(4128, 2322, 30, 24, 3),
 	/* 2072x1166@60fps */
 	FIMC_IS_SENSOR_CFG(2072, 1166, 60, 12, 4),
 	/* 1008x754@120fps */
@@ -322,10 +322,10 @@ int sensor_3l2_probe(struct platform_device *pdev)
 	module->client = NULL;
 	module->active_width = 4128;
 	module->active_height = 3096;
-	//module->margin_left = 8;
-	//module->margin_right = 8;
-	//module->margin_top = 6;
-	//module->margin_bottom = 4;
+	module->margin_left = 8;
+	module->margin_right = 8;
+	module->margin_top = 6;
+	module->margin_bottom = 4;
 	module->pixel_width = module->active_width + 16;
 	module->pixel_height = module->active_height + 10;
 	module->max_framerate = 120;
