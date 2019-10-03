@@ -232,30 +232,22 @@ enum v4l2_memory {
 
 /* see also http://vektor.theorem.ca/graphics/ycbcr/ */
 enum v4l2_colorspace {
-	/* ITU-R 601 -- broadcast NTSC/PAL */
-	V4L2_COLORSPACE_SMPTE170M     = 1,
-
-	/* 1125-Line (US) HDTV */
-	V4L2_COLORSPACE_SMPTE240M     = 2,
-
-	/* HD and modern captures. */
-	V4L2_COLORSPACE_REC709        = 3,
-
-	/* broken BT878 extents (601, luma range 16-253 instead of 16-235) */
-	V4L2_COLORSPACE_BT878         = 4,
-
-	/* These should be useful.  Assume 601 extents. */
-	V4L2_COLORSPACE_470_SYSTEM_M  = 5,
-	V4L2_COLORSPACE_470_SYSTEM_BG = 6,
-
-	/* I know there will be cameras that send this.  So, this is
-	 * unspecified chromaticities and full 0-255 on each of the
-	 * Y'CbCr components
-	 */
-	V4L2_COLORSPACE_JPEG          = 7,
-
-	/* For RGB colourspaces, this is probably a good start. */
-	V4L2_COLORSPACE_SRGB          = 8,
+  V4L2_COLORSPACE_DEFAULT = 0,
+  V4L2_COLORSPACE_SMPTE170M = 1,
+  V4L2_COLORSPACE_SMPTE240M = 2,
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+  V4L2_COLORSPACE_REC709 = 3,
+  V4L2_COLORSPACE_BT878 = 4,
+  V4L2_COLORSPACE_470_SYSTEM_M = 5,
+  V4L2_COLORSPACE_470_SYSTEM_BG = 6,
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+  V4L2_COLORSPACE_JPEG = 7,
+  V4L2_COLORSPACE_SRGB = 8,
+  V4L2_COLORSPACE_ADOBERGB = 9,
+  V4L2_COLORSPACE_BT2020 = 10,
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+  V4L2_COLORSPACE_RAW = 11,
+  V4L2_COLORSPACE_DCI_P3 = 12,
 };
 
 enum v4l2_priority {

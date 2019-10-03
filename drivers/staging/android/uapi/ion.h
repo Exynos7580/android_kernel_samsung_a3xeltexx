@@ -72,6 +72,8 @@ enum ion_heap_type {
 					   world. if this is set, all cpu accesses
 					   are prohibited.
 					 */
+#define ION_FLAG_SYNC_FORCE 32		/* cache sync forcely at allocation */
+
 /**
  * DOC: Ion Userspace API
  *
